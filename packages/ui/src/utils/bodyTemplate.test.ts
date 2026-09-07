@@ -105,6 +105,15 @@ describe('buildRawBodyFromForm', () => {
     expect(parsed.image).toBe(`{{enlace:${tagId}}}`);
     expect(raw.tags[tagId]).toEqual({ id: tagId, type: 'uploaded_file', fileName: 'photo.png' });
   });
+
+  it('writes a random field as literal text, minting no tag', () => {
+    const fieldValues: Record<string, FieldValue> = {
+      'body.name': { source: 'random', expression: '$rand.first()' },
+    };
+    const { rawBody: raw } = buildRawBodyFromForm(op(simpleSchema), fieldValues);
+    expect(JSON.parse(raw.template)).toEqual({ name: '$rand.first()', category: { id: 0 } });
+    expect(raw.tags).toEqual({});
+  });
 });
 
 describe('buildRawParamsFromForm / convertRawParamsToFieldValues', () => {
@@ -175,6 +184,13 @@ describe('convertRawBodyToFieldValues', () => {
     };
     const result = convertRawBodyToFieldValues(rawBody, op(simpleSchema));
     expect(result.fieldValues['body.name']).toEqual({ source: 'mapped', fromNodeId: 'node-a', fromResponseFieldPath: 'item.title' });
+    expect(result.lossy).toBe(false);
+  });
+
+  it('turns a whole-string $rand call back into a random fieldValue, losslessly', () => {
+    const rawBody = { template: JSON.stringify({ name: '$rand.first()', category: { id: 1 } }), tags: {} };
+    const result = convertRawBodyToFieldValues(rawBody, op(simpleSchema));
+    expect(result.fieldValues['body.name']).toEqual({ source: 'random', expression: '$rand.first()' });
     expect(result.lossy).toBe(false);
   });
 

@@ -343,7 +343,9 @@ describe('NodeConfig', () => {
     });
     // Form field rows are gone; CodeMirror editors are present instead.
     expect(screen.queryByLabelText('path.id')).not.toBeInTheDocument();
-    // Mapping tip appears once under Request, not once per Raw editor.
+    // Mapping tip lives in the Request header's info tooltip, once for the
+    // whole pane — not once per Raw editor.
+    fireEvent.click(screen.getByRole('button', { name: 'Help' }));
     expect(screen.getAllByText(/inside a string to map a value/)).toHaveLength(1);
   });
 
@@ -619,9 +621,10 @@ describe('NodeConfig', () => {
     expect(row.getByRole('textbox')).toBeDisabled();
   });
 
-  it('shows the connect-a-node hint when there are no ancestors, hides it once connected', () => {
+  it('shows the connect-a-node hint (in the info tooltip) when there are no ancestors, hides it once connected', () => {
     useWorkflowStore.setState({ nodes: [makeNode()], selectedNodeId: 'node-1' });
     const { rerender } = render(<NodeConfig />);
+    fireEvent.click(screen.getByRole('button', { name: 'Help' }));
     expect(screen.getByText(/Connect this node from another/)).toBeInTheDocument();
 
     useWorkflowStore.setState({
@@ -865,6 +868,105 @@ describe('NodeConfig', () => {
 
       fireEvent.click(screen.getByText('Switch anyway'));
       expect(asOperationNode(useWorkflowStore.getState().nodes[0]).requestMode).toBe('form');
+    });
+  });
+
+  describe('Fill with random data', () => {
+    it('renders as an icon-only button (no visible "Fill with random data" pill text) in Form mode', () => {
+      useWorkflowStore.setState({ nodes: [makeNode()], selectedNodeId: 'node-1' });
+      render(<NodeConfig />);
+      const button = screen.getByRole('button', { name: 'Fill with random data' });
+      expect(button).toBeInTheDocument();
+      expect(button).not.toHaveTextContent('Fill with random data');
+    });
+
+    it('is also offered in Raw mode, and fully overwrites the raw body with guessed $rand expressions', async () => {
+      useWorkflowStore.setState({
+        nodes: [makeNode({ requestMode: 'raw', rawBody: { template: '{"name":"fido"}', tags: {} } })],
+        selectedNodeId: 'node-1',
+      });
+      render(<NodeConfig />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Fill with random data' }));
+
+      const rawBody = asOperationNode(useWorkflowStore.getState().nodes[0]).rawBody!;
+      const parsed = JSON.parse(rawBody.template);
+      expect(parsed.name).toBe('$rand.name()');
+      expect(parsed.qty).toBe('$rand.integer()');
+      expect(['available', 'pending', 'sold']).toContain(parsed.status);
+      expect(rawBody.tags).toEqual({});
+    });
+
+    it('offers "Random" as a field source only for body fields, never path/query/header', () => {
+      const op: Operation = {
+        id: 'POST /items/{id}',
+        method: 'post',
+        path: '/items/{id}',
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'limit', in: 'query', required: false, schema: { type: 'integer' } },
+          { name: 'x-trace', in: 'header', required: false, schema: { type: 'string' } },
+        ],
+        requestBodySchema: { type: 'object', properties: { note: { type: 'string' } } },
+        requestBodyContentType: 'application/json',
+        responseSchema: null,
+      };
+      useWorkflowStore.setState({
+        nodes: [makeNode({ operationId: op.id })],
+        operations: [op],
+        selectedNodeId: 'node-1',
+      });
+      render(<NodeConfig />);
+
+      for (const path of ['path.id', 'query.limit', 'header.x-trace']) {
+        const select = fieldRow(path).getByRole('combobox', { name: `Source for ${path}` });
+        expect(within(select).queryByRole('option', { name: 'Random' })).not.toBeInTheDocument();
+      }
+      const bodySelect = fieldRow('body.note').getByRole('combobox', { name: 'Source for body.note' });
+      expect(within(bodySelect).getByRole('option', { name: 'Random' })).toBeInTheDocument();
+    });
+  });
+
+  describe('Request help tooltip', () => {
+    it('is hidden until the info button is clicked, and closes again on Escape', () => {
+      useWorkflowStore.setState({ nodes: [makeNode()], selectedNodeId: 'node-1' });
+      render(<NodeConfig />);
+
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Help' }));
+      expect(screen.getByRole('tooltip')).toBeInTheDocument();
+
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    });
+
+    it('closes on an outside click', () => {
+      useWorkflowStore.setState({ nodes: [makeNode()], selectedNodeId: 'node-1' });
+      render(<NodeConfig />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Help' }));
+      expect(screen.getByRole('tooltip')).toBeInTheDocument();
+
+      fireEvent.mouseDown(document.body);
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    });
+
+    it('mentions the dice-fill/"Random" source for body fields in Form mode, and $rand. autocomplete for the Body editor in Raw mode', async () => {
+      useWorkflowStore.setState({
+        nodes: [makeNode(), makeNode({ id: 'node-2', operationId: 'GET /pet/{petId}' })],
+        connections: [{ fromNodeId: 'node-2', toNodeId: 'node-1' }],
+        selectedNodeId: 'node-1',
+      });
+      render(<NodeConfig />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Help' }));
+      expect(screen.getByText(/Body fields can generate random data/)).toBeInTheDocument();
+      expect(screen.queryByText(/\$rand\./)).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('checkbox', { name: /Switch to Raw view/ }));
+      await waitFor(() => expect(asOperationNode(useWorkflowStore.getState().nodes[0]).rawBody).toBeTruthy());
+      expect(screen.getByText(/for a random value/)).toBeInTheDocument();
+      expect(screen.getByText(/inside a string to map a value/)).toBeInTheDocument();
     });
   });
 

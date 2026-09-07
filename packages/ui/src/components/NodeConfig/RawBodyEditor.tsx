@@ -13,9 +13,15 @@ import {
 import { json } from '@codemirror/lang-json';
 import { HighlightStyle, syntaxHighlighting, syntaxTree } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
-import { autocompletion, type Completion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
+import {
+  autocompletion,
+  snippetCompletion,
+  type Completion,
+  type CompletionContext,
+  type CompletionResult,
+} from '@codemirror/autocomplete';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
-import { makeTagPlaceholder, tagPattern } from '@get-enlace/core';
+import { listRandomMethodNames, makeTagPlaceholder, RANDOM_METHOD_ARG_HINTS, tagPattern } from '@get-enlace/core';
 import { randomId } from '../../utils/randomId.js';
 import type { BodyTag, BodyTagType, RawBody, WorkflowNode } from '../../types.js';
 import { TagConfigModal } from './TagConfigModal.js';
@@ -43,6 +49,8 @@ export interface RawBodyEditorProps {
   showHint?: boolean;
   /** Body-only, multipart-only: offers "Upload file" in the `{{` popup and the config modal's own type dropdown. Omitted (path/query editors, or a non-multipart body) means neither ever appears — a File has nowhere to go outside a multipart body (see rawBodyResolver.ts). */
   allowFileUpload?: boolean;
+  /** Body-only: offers `$rand.<method>()` completion (see randCompletionSource below). Omitted for path/query editors — those values are read off the response/URL, not generated, so a random string there is never actually useful, unlike a body field's Form-mode "Random" source (see RequestField.tsx's own `allowRandom`, which this mirrors). */
+  allowRandom?: boolean;
   /** Required whenever `allowFileUpload` is true — this component only collects the `File` (via TagConfigModal), it never touches the store itself; the caller (NodeConfig.tsx) is what has the node id `uploadedFiles` needs to be keyed under (see bodyTags.ts's `rawFileTagFieldPath`). `file: null` on an edit means "the file was cleared" — currently only reachable by deleting the whole tag instead, kept nullable for symmetry with NodeConfig's own `setUploadedFile`. */
   onUploadFile?: (tagId: string, file: File | null) => void;
 }
@@ -242,6 +250,51 @@ function tagCompletionSource(
 }
 
 /**
+ * Turns a method's `RANDOM_METHOD_ARG_HINTS` entry into a snippet template
+ * — the hint text becomes a selected, editable placeholder (`${...}`) the
+ * user tabs into and overwrites, rather than plain inserted text. Braces
+ * in the hint itself (`{min: 0, max: 100}`) are escaped since `${`/`}`
+ * are the snippet template's own placeholder delimiters (see
+ * @codemirror/autocomplete's `snippet` doc). A method with no hint (or
+ * none listed at all — anything outside the curated table) just gets
+ * empty parens with no placeholder, same as if the user had typed the
+ * call by hand and left the args empty.
+ */
+function randExpressionSnippet(method: string): string {
+  const hint = RANDOM_METHOD_ARG_HINTS[method];
+  if (!hint) return `$rand.${method}()`;
+  const escaped = hint.replace(/[{}]/g, '\\$&');
+  return `$rand.${method}(\${${escaped}})`;
+}
+
+/**
+ * `$rand.`-triggered completion for the Chance-backed random generator
+ * (@get-enlace/core's engine/randomExpr.ts) — deliberately *not* routed
+ * through `onTrigger`/a config modal the way `{{`'s tag completion is:
+ * the whole point of this syntax is that it needs no side-table entry
+ * (see randomExpr.ts's own doc), so accepting an option just writes text
+ * into the document like any ordinary word-completion, nothing opens.
+ * `methodNames` is a live reflection of the bundled Chance instance (see
+ * `listRandomMethodNames`), not hand-maintained here — this function just
+ * turns that list into completions.
+ */
+function randCompletionSource(methodNames: string[]) {
+  const options: Completion[] = methodNames.map((name) =>
+    snippetCompletion(randExpressionSnippet(name), { label: `$rand.${name}()`, type: 'function', detail: 'random value' })
+  );
+
+  return (context: CompletionContext): CompletionResult | null => {
+    const match = context.matchBefore(/\$rand\.\w*/);
+    if (!match) return null;
+
+    const node = syntaxTree(context.state).resolveInner(match.from, -1);
+    if (node.name !== 'String') return null;
+
+    return { from: match.from, to: match.to, options };
+  };
+}
+
+/**
  * The doc-shape-independent half of the editor's extensions — split out
  * from the component so a test can build a real `EditorView` against them
  * directly (see RawBodyEditor.test.tsx's tooltip-clipping regression
@@ -250,14 +303,20 @@ function tagCompletionSource(
  */
 export function buildJsonAutocompleteExtensions(
   onTriggerTag: (type: BodyTagType, from: number, to: number) => void,
-  allowFileUpload = false
+  allowFileUpload = false,
+  allowRandom = false
 ): Extension[] {
   return [
     json(),
     syntaxHighlighting(jsonHighlightStyle),
     history(),
     keymap.of([...defaultKeymap, ...historyKeymap]),
-    autocompletion({ override: [tagCompletionSource(onTriggerTag, allowFileUpload)] }),
+    autocompletion({
+      override: [
+        tagCompletionSource(onTriggerTag, allowFileUpload),
+        ...(allowRandom ? [randCompletionSource(listRandomMethodNames())] : []),
+      ],
+    }),
     EditorView.lineWrapping,
     // CodeMirror defaults to its *light* base theme (caret-color: black)
     // unless told otherwise — our CSS paints this editor with a near-
@@ -341,6 +400,7 @@ export function RawBodyEditor({
   readOnly = false,
   showHint = true,
   allowFileUpload = false,
+  allowRandom = false,
   onUploadFile,
 }: RawBodyEditorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -391,7 +451,7 @@ export function RawBodyEditor({
     const chipPluginType = chipPlugin(configRef);
 
     const extensions: Extension[] = [
-      ...buildJsonAutocompleteExtensions((type, from, to) => setPendingInsert({ type, from, to }), allowFileUpload),
+      ...buildJsonAutocompleteExtensions((type, from, to) => setPendingInsert({ type, from, to }), allowFileUpload, allowRandom),
       buildTagAutoCloneExtension(() => liveRef.current.rawBody.tags),
       chipPluginType,
       EditorView.atomicRanges.of((view) => view.plugin(chipPluginType)?.decorations ?? Decoration.none),
