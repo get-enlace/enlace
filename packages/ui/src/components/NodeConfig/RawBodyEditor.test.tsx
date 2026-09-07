@@ -393,6 +393,63 @@ describe('RawBodyEditor', () => {
     expect(await completionLabels(true)).toEqual(['Response → Map from...', 'Upload file']);
   });
 
+  function typeString(view: EditorView, text: string) {
+    for (const ch of text) {
+      const head = view.state.selection.main.head;
+      view.dispatch({
+        changes: { from: head, insert: ch },
+        selection: { anchor: head + ch.length },
+        annotations: Transaction.userEvent.of('input.type'),
+      });
+    }
+  }
+
+  it('offers "$rand.<method>()" completion when allowRandom is set', async () => {
+    const wrapper = document.createElement('div');
+    document.body.appendChild(wrapper);
+    const doc = '{"name": ""}';
+    const view = new EditorView({
+      state: EditorState.create({
+        doc,
+        selection: { anchor: doc.indexOf('""') + 1 },
+        extensions: buildJsonAutocompleteExtensions(() => {}, false, true),
+      }),
+      parent: wrapper,
+    });
+
+    typeString(view, '$rand.');
+    await waitFor(() => expect(completionStatus(view.state)).toBe('active'));
+    expect(currentCompletions(view.state).some((c) => c.label.startsWith('$rand.'))).toBe(true);
+
+    view.destroy();
+    wrapper.remove();
+  });
+
+  it('never offers "$rand." completion when allowRandom is left unset (path/query editors — see NodeConfig.tsx)', async () => {
+    const wrapper = document.createElement('div');
+    document.body.appendChild(wrapper);
+    const doc = '{"name": ""}';
+    const view = new EditorView({
+      state: EditorState.create({
+        doc,
+        selection: { anchor: doc.indexOf('""') + 1 },
+        extensions: buildJsonAutocompleteExtensions(() => {}), // allowRandom defaults to false
+      }),
+      parent: wrapper,
+    });
+
+    typeString(view, '$rand.');
+    // Nothing else matches "$rand." either (tagCompletionSource only reacts
+    // to "{{"), so there's no positive "active" transition to wait for —
+    // just let the debounce (activateOnTypingDelay, 100ms) settle and
+    // confirm no popup ever opened.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(completionStatus(view.state)).not.toBe('active');
+
+    view.destroy();
+    wrapper.remove();
+  });
+
   it('renders a distinct chip for an uploaded_file tag, labeled with its filename rather than a source node', async () => {
     const rawBody: RawBody = {
       template: '{"image":"{{enlace:tag1}}"}',

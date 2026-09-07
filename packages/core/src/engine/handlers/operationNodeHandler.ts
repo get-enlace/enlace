@@ -2,6 +2,7 @@ import { resolveCredentialInjection } from '../credentials.js';
 import { resolveRawBody } from '../rawBodyResolver.js';
 import { getByPath, setByPath } from '../path.js';
 import { rawFileTagFieldPath, resolveTagsInValue } from '../../bodyTags.js';
+import { resolveRandomExpressionsInValue } from '../randomExpr.js';
 import type { Credential, FieldValue, Operation, RunStep, RunStepRequest, WorkflowNode } from '../../types.js';
 import { asOperationNode } from './guards.js';
 import type { NodeHandler, NodeHandlerContext } from './index.js';
@@ -14,6 +15,13 @@ function resolveFieldValue(
   uploadedFiles: Record<string, File>
 ): unknown {
   if (fieldValue.source === 'static') return fieldValue.value;
+  // Not resolved here — just handed back as literal text. The actual
+  // `$rand.method(args)` call runs in the per-field loop below
+  // (resolveRandomExpressionsInValue), same choke point a `static` value
+  // embedding a stray `{{enlace:<id>}}` tag already goes through, and for
+  // the same reason: this function only unwraps a `FieldValue`'s own
+  // shape, it doesn't know about either resolution syntax.
+  if (fieldValue.source === 'random') return fieldValue.expression;
   if (fieldValue.source === 'file') {
     const file = uploadedFiles[`${nodeId}::${fieldPath}`];
     if (!file) {
@@ -79,6 +87,9 @@ export async function buildRequest(
     }
 
     let value = resolveFieldValue(fieldValue, fieldPath, node.id, stepsByNodeId, uploadedFiles);
+    if (fieldValue.source !== 'file') {
+      value = resolveRandomExpressionsInValue(value);
+    }
     if (fieldValue.source !== 'file' && Object.keys(nodeTags).length > 0) {
       value = resolveTagsInValue(value, nodeTags, stepsByNodeId, nodeLabels);
     }

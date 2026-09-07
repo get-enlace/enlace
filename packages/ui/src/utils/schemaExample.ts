@@ -77,6 +77,48 @@ export function buildSchemaExample(schema: Schema | null | undefined): unknown {
 }
 
 /**
+ * Same recursive walk as `buildSchemaExample`, but every scalar leaf is
+ * produced by `guessLeaf` (a `$rand.<method>()` expression — see
+ * randomFill.ts's `fillRawBodyWithRandomData`, the only caller) instead of
+ * a placeholder value, and *every* property is filled in, required or not
+ * — the whole point of a "fill with random data" action is a fully
+ * populated, ready-to-run body, not a "fill this in" skeleton, so there's
+ * no reason to null out optional fields here the way `buildSchemaExample`
+ * does. `guessLeaf` only ever sees the non-enum, non-file case: an enum
+ * leaf gets one of its own declared values instead (Chance has no notion
+ * of an API-specific enum), and a `format: 'binary'` leaf (file upload) is
+ * left blank — same as Form mode's `fillBodyWithRandomData`, which skips
+ * file fields entirely since there's no file to attach from a bulk-fill
+ * action.
+ */
+export function buildRandomSchemaExample(
+  schema: Schema | null | undefined,
+  guessLeaf: (name: string | undefined, schema: Schema) => string,
+  name?: string
+): unknown {
+  if (!schema) return null;
+
+  if (schema.allOf?.length) return buildRandomSchemaExample(mergeAllOf(schema.allOf), guessLeaf, name);
+
+  const branch = firstBranch(schema);
+  if (branch) return buildRandomSchemaExample(branch, guessLeaf, name);
+
+  if (isArraySchema(schema)) return [buildRandomSchemaExample(schema.items, guessLeaf)];
+
+  if (isObjectSchema(schema)) {
+    const example: Record<string, unknown> = {};
+    for (const [propName, propSchema] of Object.entries<Schema>(schema.properties ?? {})) {
+      example[propName] = buildRandomSchemaExample(propSchema, guessLeaf, propName);
+    }
+    return example;
+  }
+
+  if (schema.format === 'binary') return '';
+  if (schema.enum?.length) return schema.enum[Math.floor(Math.random() * schema.enum.length)];
+  return guessLeaf(name, schema);
+}
+
+/**
  * True if any property anywhere in the schema (recursively) is a shape
  * the flat form generator can't cleanly represent: a polymorphic
  * oneOf/anyOf/allOf, or an array of objects (form mode edits an array as

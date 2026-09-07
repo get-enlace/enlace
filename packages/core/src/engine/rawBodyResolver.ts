@@ -1,10 +1,6 @@
 import type { BodyTag, RawBody, RunStep } from '../types.js';
-import { isWholeStringMatch, resolveTagValue, tagPattern } from '../bodyTags.js';
-
-/** Embeds a resolved value as text inside a larger string (the "prefix-{{tag}}-suffix" case) — escaped the same way JSON.stringify would escape it, minus the surrounding quotes it would normally add. Only meaningful for scalar-ish values; an object/array embedded this way stringifies via `String()`, same as any other JS string interpolation. */
-function embedAsStringFragment(value: unknown): string {
-  return JSON.stringify(String(value)).slice(1, -1);
-}
+import { embedAsStringFragment, isWholeStringMatch, resolveTagValue, tagPattern } from '../bodyTags.js';
+import { resolveRandomExpressionsInRawText } from './randomExpr.js';
 
 // A `File` has no JSON representation, so an `uploaded_file` tag can't be
 // substituted with its real value the way every other tag is (below) — it's
@@ -78,6 +74,15 @@ function swapFileSentinels(value: unknown, tags: Record<string, BodyTag>, fileLo
  * source node hasn't produced a response yet, a referenced header is
  * missing, or an uploaded file was never (re-)selected — never silently
  * sends a placeholder.
+ *
+ * A `$rand.method(args)` call (engine/randomExpr.ts) is resolved first, as
+ * a separate pass over the plain template text — it needs no tag registry
+ * entry (unlike every `{{enlace:<id>}}` placeholder here, it carries
+ * everything it needs to resolve inline, nothing to look up), and re-runs
+ * fresh on every call to this function, i.e. every chain run, which is the
+ * whole point: a workflow re-run after a downstream failure gets a new
+ * random value rather than replaying whatever a prior run happened to
+ * generate.
  */
 export function resolveRawBody(
   rawBody: RawBody,
@@ -85,7 +90,7 @@ export function resolveRawBody(
   nodeLabels?: Map<string, string>,
   fileLookup?: (tagId: string) => File | undefined
 ): unknown {
-  const text = rawBody.template;
+  const text = resolveRandomExpressionsInRawText(rawBody.template);
   let result = '';
   let lastIndex = 0;
 

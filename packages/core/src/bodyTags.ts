@@ -69,6 +69,20 @@ export function resolveJsonPath(value: unknown, path: string | undefined): unkno
   return getByPath(value, stripped);
 }
 
+/**
+ * Embeds a resolved value as text inside a larger string (the
+ * "prefix-{{tag}}-suffix" case) — escaped the same way JSON.stringify
+ * would escape it, minus the surrounding quotes it would normally add.
+ * Only meaningful for scalar-ish values; an object/array embedded this way
+ * stringifies via `String()`, same as any other JS string interpolation.
+ * Shared by engine/rawBodyResolver.ts (a tag embedded in Raw JSON text) and
+ * engine/randomExpr.ts (a `$rand.method()` call embedded in Raw JSON text)
+ * — both splice a resolved value into a larger JSON string the same way.
+ */
+export function embedAsStringFragment(value: unknown): string {
+  return JSON.stringify(String(value)).slice(1, -1);
+}
+
 /** Case-insensitive lookup into a response's headers map (HTTP header names are case-insensitive). */
 export function getHeaderCaseInsensitive(headers: Record<string, string>, name: string): string | undefined {
   const target = name.toLowerCase();

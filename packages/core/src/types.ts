@@ -30,7 +30,16 @@ export type FieldValue =
   | { source: 'static'; value: unknown }
   | { source: 'mapped'; fromNodeId: string; fromResponseFieldPath: string }
   /** Marker only — the real `File` lives in the store's `uploadedFiles` map and is never serialized. */
-  | { source: 'file'; fileName: string };
+  | { source: 'file'; fileName: string }
+  /**
+   * `expression` is a literal `$rand.method(args)` call (engine/
+   * randomExpr.ts) — unlike `mapped`/`file`, nothing else is stored
+   * anywhere for this: the expression text is everything resolution needs,
+   * re-run fresh (a new random value) on every chain execution. A distinct
+   * source rather than folding this into `static` purely so the Form UI
+   * can render/edit it as its own picker rather than a plain text box.
+   */
+  | { source: 'random'; expression: string };
 
 /**
  * What a single inline "tag chip" in a Raw JSON body resolves against —

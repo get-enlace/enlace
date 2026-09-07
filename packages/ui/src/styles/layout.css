@@ -243,6 +243,70 @@
   border-color: var(--color-focus);
 }
 
+/* Request-section help — a small icon button in the header row (see
+   NodeConfig.tsx's op-title) that opens a contextual tooltip on click. The
+   wrapper, not the header bar itself, is the tooltip's positioning
+   anchor, so it stays pinned under the icon regardless of how wide the
+   operation path grows. */
+.node-config__info {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.node-config__info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.node-config__info-btn:hover,
+.node-config__info-btn[aria-expanded='true'] {
+  color: var(--color-text);
+  background: var(--color-border);
+}
+
+.node-config__info-tooltip {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 2;
+  width: 240px;
+  max-width: 70vw;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-topbar-bg);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  font-style: normal;
+  text-align: left;
+}
+
+.node-config__info-tooltip p {
+  margin: 0 0 8px;
+}
+
+.node-config__info-tooltip p:last-child {
+  margin-bottom: 0;
+}
+
+.node-config__info-tooltip code {
+  font-family: var(--font-mono);
+  background: var(--color-panel-bg);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
 .node-config__cred-menu {
   list-style: none;
   margin: 8px 0 0;

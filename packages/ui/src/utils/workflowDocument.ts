@@ -20,11 +20,7 @@ import type {
 import { ENLACE_COLLECTION_FORMAT, ENLACE_COLLECTION_VERSION } from '../types.js';
 import type { OAuth2ClientAuthMethod } from '../types.js';
 import { isDraftComplete, toDraft } from './credentialDraft.js';
-
-/** A `kind: 'presets'` collection has no `operationId` at all — `undefined` in that case, same as a plain missing one. */
-function operationIdOf(node: WorkflowNode): string | undefined {
-  return node.kind === 'presets' ? undefined : node.operationId;
-}
+import { operationIdOf } from './workflowNode.js';
 
 /** Keys that authenticate. Stripped exports never write or read these. */
 const SECRET_KEYS = ['token', 'password', 'key', 'clientSecret'] as const;
@@ -642,7 +638,10 @@ function parseFieldValues(raw: unknown, nodeId: string): Record<string, FieldVal
     if (isUnsafeKey(path)) {
       return `Enlace collection node "${nodeId}" has an invalid field path "${path}".`;
     }
-    if (!isRecord(value) || (value.source !== 'static' && value.source !== 'mapped' && value.source !== 'file')) {
+    if (
+      !isRecord(value) ||
+      (value.source !== 'static' && value.source !== 'mapped' && value.source !== 'file' && value.source !== 'random')
+    ) {
       return `Enlace collection node "${nodeId}" has an invalid field value at "${path}".`;
     }
     if (value.source === 'static') {
@@ -652,6 +651,11 @@ function parseFieldValues(raw: unknown, nodeId: string): Record<string, FieldVal
         return `Enlace collection node "${nodeId}" has an invalid file field at "${path}".`;
       }
       out[path] = { source: 'file', fileName: value.fileName };
+    } else if (value.source === 'random') {
+      if (typeof value.expression !== 'string') {
+        return `Enlace collection node "${nodeId}" has an invalid random field at "${path}".`;
+      }
+      out[path] = { source: 'random', expression: value.expression };
     } else if (typeof value.fromNodeId === 'string' && typeof value.fromResponseFieldPath === 'string') {
       out[path] = {
         source: 'mapped',

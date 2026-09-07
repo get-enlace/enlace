@@ -23,7 +23,12 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
+  "dependencies": {
+    "chance": "^1.1.12",
+    "json5": "^2.2.3"
+  },
   "devDependencies": {
+    "@types/chance": "^1.1.6",
     "@types/node": "^20.14.0",
     "typescript": "^5.5.4",
     "vitest": "^2.0.5"

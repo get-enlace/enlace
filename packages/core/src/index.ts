@@ -15,5 +15,6 @@ export * from './engine/securitySchemes.js';
 export * from './engine/path.js';
 
 export * from './bodyTags.js';
+export * from './engine/randomExpr.js';
 export * from './nodeLabel.js';
 export * from './collectionCrypto.js';

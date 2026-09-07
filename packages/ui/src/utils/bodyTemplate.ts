@@ -1,4 +1,4 @@
-import { setByPath, getByPath, makeTagPlaceholder, tagPattern } from '@get-enlace/core';
+import { setByPath, getByPath, isWholeRandomExprMatch, makeTagPlaceholder, tagPattern } from '@get-enlace/core';
 import type { BodyTag, FieldValue, Operation, RawBody } from '../types.js';
 import { flattenRequestFields } from './flattenSchema.js';
 import { buildSchemaExample } from './schemaExample.js';
@@ -45,6 +45,12 @@ function applyFieldValueToTarget(
 ): void {
   if (fieldValue.source === 'static') {
     setByPath(target, key, fieldValue.value);
+  } else if (fieldValue.source === 'random') {
+    // Literal text, not a tag chip — a `$rand.method(args)` expression
+    // carries everything it needs to resolve inline (see
+    // @get-enlace/core's engine/randomExpr.ts), so it's written straight
+    // into the template same as a static string, no `tags` entry minted.
+    setByPath(target, key, fieldValue.expression);
   } else if (fieldValue.source === 'mapped') {
     const tagId = randomId();
     tags[tagId] = {
@@ -191,6 +197,12 @@ function convertRawObjectToFieldValues(
       fieldValues[`${fieldPrefix}${key}`] = { source: 'file', fileName: tag.fileName };
       fileFieldTagIds[`${fieldPrefix}${key}`] = tag.id;
       consumedTagIds.add(tag.id);
+      setByPath(reconstructed, key, value);
+    } else if (typeof value === 'string' && isWholeRandomExprMatch(value)) {
+      // No tag to consume — a `$rand.method(args)` call is plain literal
+      // text (see applyFieldValueToTarget), so it round-trips to Form mode
+      // like any other value the form can fully represent, not a lossy one.
+      fieldValues[`${fieldPrefix}${key}`] = { source: 'random', expression: value };
       setByPath(reconstructed, key, value);
     } else {
       fieldValues[`${fieldPrefix}${key}`] = { source: 'static', value };
