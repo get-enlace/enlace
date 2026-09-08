@@ -20,9 +20,7 @@ function makeNode(overrides: Partial<OperationNode> = {}): OperationNode {
     id: 'node-1',
     kind: 'operation',
     operationId: 'POST /customers',
-    requestMode: 'form',
     credentialId: null,
-    fieldValues: {},
     ...overrides,
   };
 }
@@ -79,7 +77,6 @@ describe('buildNodeLabels', () => {
       id: 'g1',
       kind: 'presets',
       credentialId: null,
-      fieldValues: {},
       presets: [
         { id: 's1', kind: 'wait', durationMs: 2000 },
         { id: 's2', kind: 'wait', durationMs: 500 },
@@ -89,7 +86,7 @@ describe('buildNodeLabels', () => {
   });
 
   it('labels an empty presets collection plainly rather than blank', () => {
-    const node: PresetsNode = { id: 'g1', kind: 'presets', credentialId: null, fieldValues: {}, presets: [] };
+    const node: PresetsNode = { id: 'g1', kind: 'presets', credentialId: null, presets: [] };
     expect(buildNodeLabels([node], new Map()).get('g1')).toBe('Presets: Empty');
   });
 
@@ -98,7 +95,6 @@ describe('buildNodeLabels', () => {
       id: 'g1',
       kind: 'presets',
       credentialId: null,
-      fieldValues: {},
       presets: [{ id: 's1', kind: 'assert', checks: [{ id: 'c1', source: { type: 'response_status', sourceNodeId: 'n0' }, operator: 'equals', expected: '200' }] }],
     };
     expect(buildNodeLabels([node], new Map()).get('g1')).toBe('Presets: Assert (1 check)');

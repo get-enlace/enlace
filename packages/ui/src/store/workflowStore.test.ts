@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { connectionKey } from '@get-enlace/core';
 import { useWorkflowStore } from './workflowStore.js';
 import { serializeCollection } from '../utils/workflowDocument.js';
-import type { AssertPreset, Preset, PresetsNode, WaitPreset, WorkflowNode } from '../types.js';
+import type { AssertPreset, OperationNode, Preset, PresetsNode, WaitPreset, WorkflowNode } from '../types.js';
 
 // Preset is a real discriminated union (WaitPreset | AssertPreset) — these
 // narrow-or-throw so a test that just added/expects one kind can read its
@@ -22,6 +22,10 @@ function asAssertPreset(preset: Preset): AssertPreset {
 // discriminated union (OperationNode | PresetsNode).
 function asPresetsNode(node: WorkflowNode): PresetsNode {
   if (node.kind !== 'presets') throw new Error('expected a presets collection, got an operation node');
+  return node;
+}
+function asOperationNode(node: WorkflowNode): OperationNode {
+  if (node.kind !== 'operation') throw new Error('expected an operation node, got a presets collection');
   return node;
 }
 
@@ -49,6 +53,51 @@ beforeEach(() => {
     isDebugRun: false,
     debugConsoleOpen: false,
     error: null,
+  });
+});
+
+describe('addNode', () => {
+  // Every section (path/query/headers/body) opens pre-seeded with a Raw
+  // JSON skeleton straight from the operation's own schema — there's no
+  // Form mode any more to lazily generate one from on first switch, so
+  // this is the only place it happens (see rawDefaults.ts).
+  it('seeds rawPath/rawQuery/rawHeaders/rawBody from the matching operation, null for sections the operation declares none of', () => {
+    useWorkflowStore.setState({
+      operations: [
+        {
+          id: 'PATCH /widgets/{id}',
+          method: 'patch',
+          path: '/widgets/{id}',
+          parameters: [
+            { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+            { name: 'x-trace-id', in: 'header', required: false, schema: { type: 'string' } },
+          ],
+          requestBodySchema: { type: 'object', required: ['name'], properties: { name: { type: 'string' } } },
+          requestBodyContentType: 'application/json',
+          responseSchema: null,
+        },
+      ],
+    });
+
+    const { addNode } = useWorkflowStore.getState();
+    const id = addNode('PATCH /widgets/{id}');
+    const node = asOperationNode(useWorkflowStore.getState().nodes.find((n) => n.id === id)!);
+
+    expect(JSON.parse(node.rawPath!.template)).toEqual({ id: '' });
+    expect(node.rawQuery).toBeNull(); // no query params declared
+    expect(JSON.parse(node.rawHeaders!.template)).toEqual({ 'x-trace-id': '' });
+    expect(JSON.parse(node.rawBody!.template)).toEqual({ name: '' });
+  });
+
+  it('leaves every raw section null when the operation cannot be found (e.g. spec not loaded yet)', () => {
+    const { addNode } = useWorkflowStore.getState();
+    const id = addNode('GET /unknown');
+    const node = asOperationNode(useWorkflowStore.getState().nodes.find((n) => n.id === id)!);
+
+    expect(node.rawPath).toBeNull();
+    expect(node.rawQuery).toBeNull();
+    expect(node.rawHeaders).toBeNull();
+    expect(node.rawBody).toBeNull();
   });
 });
 
@@ -299,16 +348,23 @@ describe('removeNode', () => {
     expect(useWorkflowStore.getState().presetsCollapsed[presetsId]).toBeUndefined();
   });
 
-  it("resets another node's field mapped from the deleted node to an empty static value, instead of a dangling reference", () => {
-    const { addNode, setFieldValue, removeNode } = useWorkflowStore.getState();
+  it("leaves a raw tag chip's dangling sourceNodeId in place after its source node is removed, rather than resetting it", () => {
+    // Unlike the old Form-mode fieldValues cleanup this replaced,
+    // RawBodyEditor.tsx already renders a dangling sourceNodeId as a
+    // visible "broken" chip the user can fix or remove — so there's
+    // nothing for removeNode to silently paper over here.
+    const { addNode, setRawPath, removeNode } = useWorkflowStore.getState();
     const a = addNode('GET /a');
     const b = addNode('GET /b');
-    setFieldValue(b, 'path.id', { source: 'mapped', fromNodeId: a, fromResponseFieldPath: 'id' });
+    setRawPath(b, {
+      template: '{"id":"{{enlace:tag1}}"}',
+      tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: a, jsonPath: 'id' } },
+    });
 
     removeNode(a);
 
-    const nodeB = useWorkflowStore.getState().nodes.find((n) => n.id === b)!;
-    expect(nodeB.fieldValues['path.id']).toEqual({ source: 'static', value: '' });
+    const nodeB = asOperationNode(useWorkflowStore.getState().nodes.find((n) => n.id === b)!);
+    expect(nodeB.rawPath?.tags.tag1).toEqual({ id: 'tag1', type: 'response_body', sourceNodeId: a, jsonPath: 'id' });
   });
 
   it('clears selectedNodeId if the removed node was selected', () => {
@@ -369,20 +425,25 @@ describe('connectNodes / disconnectNodes', () => {
     expect(useWorkflowStore.getState().connections).toEqual([{ fromNodeId: a, toNodeId: b }]);
   });
 
-  it("doesn't touch fieldValues — a connection is an ordering edge only, separate from field mapping", () => {
-    const { addNode, connectNodes, disconnectNodes, setFieldValue } = useWorkflowStore.getState();
+  it("doesn't touch a raw section's tag chips — a connection is an ordering edge only, separate from field mapping", () => {
+    const { addNode, connectNodes, disconnectNodes, setRawPath } = useWorkflowStore.getState();
     const a = addNode('GET /a');
     const b = addNode('GET /b');
     connectNodes(a, b);
-    setFieldValue(b, 'path.id', { source: 'mapped', fromNodeId: a, fromResponseFieldPath: 'id' });
+    setRawPath(b, {
+      template: '{"id":"{{enlace:tag1}}"}',
+      tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: a, jsonPath: 'id' } },
+    });
 
     disconnectNodes(a, b);
 
     expect(useWorkflowStore.getState().connections).toEqual([]);
-    expect(useWorkflowStore.getState().nodes.find((n) => n.id === b)!.fieldValues['path.id']).toEqual({
-      source: 'mapped',
-      fromNodeId: a,
-      fromResponseFieldPath: 'id',
+    const nodeB = asOperationNode(useWorkflowStore.getState().nodes.find((n) => n.id === b)!);
+    expect(nodeB.rawPath?.tags.tag1).toEqual({
+      id: 'tag1',
+      type: 'response_body',
+      sourceNodeId: a,
+      jsonPath: 'id',
     });
   });
 
@@ -783,7 +844,7 @@ describe('replaceWorkflow', () => {
     const incoming = serializeCollection({
       name: 'Orders sandbox',
       nodes: [
-        { id: 'n-new', kind: 'operation', operationId: 'POST /orders', requestMode: 'form', credentialId: 'c-new', fieldValues: {} },
+        { id: 'n-new', kind: 'operation', operationId: 'POST /orders', credentialId: 'c-new' },
       ],
       connections: [],
       nodePositions: { 'n-new': { x: 40, y: 80 } },
@@ -792,9 +853,7 @@ describe('replaceWorkflow', () => {
     replaceWorkflow(incoming);
 
     const state = useWorkflowStore.getState();
-    expect(state.nodes).toEqual([
-      { id: 'n-new', kind: 'operation', operationId: 'POST /orders', requestMode: 'form', credentialId: 'c-new', fieldValues: {} },
-    ]);
+    expect(state.nodes).toEqual([{ id: 'n-new', kind: 'operation', operationId: 'POST /orders', credentialId: 'c-new' }]);
     expect(state.nodePositions).toEqual({ 'n-new': { x: 40, y: 80 } });
     expect(state.credentials).toEqual([{ id: 'c-new', name: 'imported', type: 'bearer', token: '' }]);
     expect(state.selectedNodeId).toBeNull();
@@ -846,16 +905,7 @@ describe('locked while a run is in progress', () => {
   // and "take" in the store while silently having no effect on the run
   // already using the old snapshot. See workflowStore.ts's isLocked.
   it('no-ops every node-config/data-mapping/graph-structure mutation while isRunning, leaving state untouched', () => {
-    const {
-      addNode,
-      connectNodes,
-      setCredential,
-      setFieldValue,
-      mergeFieldValues,
-      setRequestMode,
-      setRawBody,
-      toggleBreakpoint,
-    } = useWorkflowStore.getState();
+    const { addNode, connectNodes, setCredential, setRawPath, setRawBody, toggleBreakpoint } = useWorkflowStore.getState();
     const a = addNode('GET /a', { x: 0, y: 0 });
     const b = addNode('GET /b', { x: 100, y: 0 });
     connectNodes(a, b);
@@ -865,9 +915,7 @@ describe('locked while a run is in progress', () => {
 
     expect(addNode('GET /c')).toBe('');
     setCredential(a, 'some-credential-id');
-    setFieldValue(a, 'body.x', { source: 'static', value: 'nope' });
-    mergeFieldValues(a, { 'body.y': { source: 'static', value: 'nope' } });
-    setRequestMode(a, 'raw');
+    setRawPath(a, { template: '{}', tags: {} });
     setRawBody(a, { template: '{}', tags: {} });
     useWorkflowStore.getState().connectNodes(b, a);
     useWorkflowStore.getState().disconnectNodes(a, b);
@@ -1153,8 +1201,8 @@ describe('workflowStore node groups', () => {
     const incoming = serializeCollection({
       name: 'Imported',
       nodes: [
-        { id: 'n-new', kind: 'operation', operationId: 'GET /a', requestMode: 'form', credentialId: null, fieldValues: {} },
-        { id: 'n-new-2', kind: 'operation', operationId: 'GET /b', requestMode: 'form', credentialId: null, fieldValues: {} },
+        { id: 'n-new', kind: 'operation', operationId: 'GET /a', credentialId: null },
+        { id: 'n-new-2', kind: 'operation', operationId: 'GET /b', credentialId: null },
       ],
       connections: [],
       nodePositions: { 'n-new': { x: 40, y: 80 }, 'n-new-2': { x: 60, y: 80 } },

@@ -26,20 +26,21 @@ export interface Operation {
   responseSchema: Record<string, any> | null;
 }
 
+/**
+ * Only ever used today for a credential's per-node `extraTokenParams`
+ * override (`OperationNode.credentialExtraParamOverrides` below) — a small,
+ * separate picker (components/NodeConfig/CredentialParamOverrideRow.tsx),
+ * not the request body/path/query/header sections, which are Raw JSON only
+ * (see OperationNode's own comment). Used to also carry `'file'` and
+ * `'random'` variants for the old per-leaf Form-mode field editor; both
+ * dropped along with it — a Raw JSON section's file upload is a `BodyTag`
+ * (`uploaded_file`) instead, and its random value is a literal
+ * `$rand.method(args)` call resolved by engine/randomExpr.ts, neither of
+ * which needed a `FieldValue` variant of its own to begin with.
+ */
 export type FieldValue =
   | { source: 'static'; value: unknown }
-  | { source: 'mapped'; fromNodeId: string; fromResponseFieldPath: string }
-  /** Marker only — the real `File` lives in the store's `uploadedFiles` map and is never serialized. */
-  | { source: 'file'; fileName: string }
-  /**
-   * `expression` is a literal `$rand.method(args)` call (engine/
-   * randomExpr.ts) — unlike `mapped`/`file`, nothing else is stored
-   * anywhere for this: the expression text is everything resolution needs,
-   * re-run fresh (a new random value) on every chain execution. A distinct
-   * source rather than folding this into `static` purely so the Form UI
-   * can render/edit it as its own picker rather than a plain text box.
-   */
-  | { source: 'random'; expression: string };
+  | { source: 'mapped'; fromNodeId: string; fromResponseFieldPath: string };
 
 /**
  * What a single inline "tag chip" in a Raw JSON body resolves against —
@@ -64,9 +65,8 @@ export type BodyTagType = 'response_body' | 'response_raw' | 'response_header' |
  * step's captured result (`sourceNodeId`, plus a type-specific filter);
  * `uploaded_file` instead names a local file the user attached directly —
  * the real `File` lives in the store's `uploadedFiles` map (never
- * serialized, same "marker only" treatment `FieldValue`'s own
- * `source: 'file'` variant already gets), keyed off this tag's own `id`
- * rather than a `sourceNodeId` it doesn't have.
+ * serialized), keyed off this tag's own `id` rather than a `sourceNodeId`
+ * it doesn't have.
  */
 export type BodyTag =
   | {
@@ -100,10 +100,10 @@ export type ResponseBodyTag = Extract<BodyTag, { sourceNodeId: string }>;
 export type ResponseBodyTagRef = DistributiveOmit<ResponseBodyTag, 'id'>;
 
 /**
- * The Raw JSON alternative to per-leaf `fieldValues['body.*']` entries —
- * see utils/bodyTemplate.ts for the Form<->Raw conversion and
- * components/RawBodyEditor.tsx for the editor itself. `template` is
- * always valid JSON text; a mapped value (or an attached file — see
+ * The Raw JSON text an `OperationNode` stores for its path/query/headers/
+ * body sections — see components/NodeConfig/RawBodyEditor.tsx for the
+ * editor itself. `template` is always valid JSON text; a mapped value (or
+ * an attached file — see
  * `BodyTag`'s `uploaded_file` variant) is represented as literal text
  * `{{enlace:<tagId>}}` sitting inside an existing string's quotes (see
  * utils/bodyTags.ts's `tagPattern`/`makeTagPlaceholder`), never as a
@@ -172,8 +172,8 @@ export interface AssertCheck {
  * only within the collection's own `presets` array (used for reorder/remove
  * and as the id suffix a preset's own `RunStep` is stamped with — see
  * `engine/nodeHandlers.ts`'s `presetsNodeHandler`). Deliberately not itself
- * a `WorkflowNode`: a preset has no `credentialId`/`fieldValues`/graph
- * position of its own, and — per the issue's "Inside the collection:
+ * a `WorkflowNode`: a preset has no `credentialId`/graph position of its
+ * own, and — per the issue's "Inside the collection:
  * presets only, linear order only" — never participates in
  * `WorkflowConnection`/the main dependency graph individually; only the
  * collection as a whole does (see dependencyGraph.ts's own `checks` loop
@@ -215,32 +215,33 @@ export type NewPreset = DistributiveOmit<Preset, 'id'>;
 interface WorkflowNodeBase {
   id: string; // unique per canvas instance
   credentialId: string | null;
-  fieldValues: Record<string, FieldValue>;
 }
 
 /**
- * The everyday node: fires an HTTP call described by `operationId`.
+ * The everyday node: fires an HTTP call described by `operationId`. Every
+ * request-shaping section (path/query/headers/body) is edited and stored as
+ * Raw JSON — there used to be a per-leaf `fieldValues`-driven Form mode too
+ * (a flattened field list, one row per schema property), dropped entirely:
+ * it fell over on any real-world nested/array/polymorphic body, and Raw mode
+ * already covered every section anyway (tag chips for mapping, `$rand.` for
+ * random values — see components/NodeConfig/RawBodyEditor.tsx). No
+ * migration path was needed to remove it; nothing had shipped to real users
+ * yet.
  */
 export interface OperationNode extends WorkflowNodeBase {
   kind: 'operation';
   /** References an Operation.id. */
   operationId: string;
-  /**
-   * `'form'` reads/writes `path.*` / `query.*` / `body.*` keys from
-   * `fieldValues`; `'raw'` uses `rawPath` / `rawQuery` / `rawBody` instead
-   * for those same three sections. Orthogonal to `fieldValues` — header
-   * fields always stay on the form regardless of this setting.
-   */
-  requestMode: 'form' | 'raw';
   rawPath?: RawBody | null;
   rawQuery?: RawBody | null;
+  rawHeaders?: RawBody | null;
   rawBody?: RawBody | null;
   /**
    * Per-node overrides of an oauth2 credential's `extraTokenParams`
    * (`oauth2_clientCredentials` / `oauth2_password` only — no effect on
    * any other credential type), keyed by the same param name, resolved
-   * the same way a mapped `FieldValue` in `fieldValues` is: from a static
-   * value, or from an ancestor node's captured response.
+   * the same way a mapped `FieldValue` in a Raw section's tag is: from a
+   * static value, or from an ancestor node's captured response.
    *
    * Deliberately layered *on top of* the credential's own
    * `extraTokenParams` at request time rather than stored on the shared
@@ -273,12 +274,11 @@ export interface OperationNode extends WorkflowNodeBase {
 /**
  * A `kind: 'presets'` collection — no `operationId`/raw body/credential
  * overrides of its own, just an ordered run of `presets` (see `Preset`
- * above and engine/handlers/presetsNodeHandler.ts). `credentialId`/
- * `fieldValues` stay on the shared base even though a presets collection
- * never uses either today — keeping them here (rather than moving them onto
- * `OperationNode` too) avoids widening every existing "any `WorkflowNode`"
- * consumer (selection, positioning, connections) into a kind-narrowing call
- * just to read an `id`.
+ * above and engine/handlers/presetsNodeHandler.ts). `credentialId` stays on
+ * the shared base even though a presets collection never uses it today —
+ * keeping it here (rather than moving it onto `OperationNode` too) avoids
+ * widening every existing "any `WorkflowNode`" consumer (selection,
+ * positioning, connections) into a kind-narrowing call just to read an `id`.
  */
 export interface PresetsNode extends WorkflowNodeBase {
   kind: 'presets';

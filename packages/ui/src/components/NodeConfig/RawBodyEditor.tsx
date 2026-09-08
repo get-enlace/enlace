@@ -25,7 +25,7 @@ import {
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { listRandomMethodNames, makeTagPlaceholder, RANDOM_METHOD_ARG_HINTS, randomExprPattern, tagPattern } from '@get-enlace/core';
 import { randomId } from '../../utils/randomId.js';
-import type { BodyTag, BodyTagType, RawBody, WorkflowNode } from '../../types.js';
+import type { BodyTag, BodyTagType, Operation, RawBody, WorkflowNode } from '../../types.js';
 import { BeautifyIcon } from '../chromeIcons.js';
 import { TagConfigModal } from './TagConfigModal.js';
 
@@ -37,6 +37,8 @@ export interface RawBodyEditorProps {
    * buildNodeLabels) — not just `ancestorNodes` — so a tag chip's label always matches what the
    * same node shows on its canvas card and in every other picker. */
   nodeLabels: Map<string, string>;
+  /** Forwarded to TagConfigModal, which uses it to power the "Filter (JSONPath)" field's response-path autocomplete. */
+  operations: Operation[];
   /**
    * Rejects edits at the CodeMirror level (`EditorState.readOnly`), not
    * just by the caller ignoring `onChange` — this editor isn't a plain
@@ -52,7 +54,7 @@ export interface RawBodyEditorProps {
   showHint?: boolean;
   /** Body-only, multipart-only: offers "Upload file" in the `{{` popup and the config modal's own type dropdown. Omitted (path/query editors, or a non-multipart body) means neither ever appears — a File has nowhere to go outside a multipart body (see rawBodyResolver.ts). */
   allowFileUpload?: boolean;
-  /** Body-only: offers `$rand.<method>()` completion (see randCompletionSource below). Omitted for path/query editors — those values are read off the response/URL, not generated, so a random string there is never actually useful, unlike a body field's Form-mode "Random" source (see RequestField.tsx's own `allowRandom`, which this mirrors). */
+  /** Body-only: offers `$rand.<method>()` completion (see randCompletionSource below). Omitted for path/query/header editors — those values are read off the response/URL, not generated, so a random string there is never actually useful. */
   allowRandom?: boolean;
   /** Required whenever `allowFileUpload` is true — this component only collects the `File` (via TagConfigModal), it never touches the store itself; the caller (NodeConfig.tsx) is what has the node id `uploadedFiles` needs to be keyed under (see bodyTags.ts's `rawFileTagFieldPath`). `file: null` on an edit means "the file was cleared" — currently only reachable by deleting the whole tag instead, kept nullable for symmetry with NodeConfig's own `setUploadedFile`. */
   onUploadFile?: (tagId: string, file: File | null) => void;
@@ -207,9 +209,9 @@ function chipPlugin(configRef: { current: ChipConfig }) {
  * reopens (typing `{{` inside Raw mode's schema-example placeholder text,
  * e.g. `"string"`, without clearing it first, leaves the chip embedded in
  * leftover text you probably didn't mean to keep) is a copy-editing rough
- * edge, not a correctness one: utils/bodyTags.ts's `resolveTagsInValue`
- * resolves an embedded tag correctly at request time regardless of mode,
- * so the worst case is a field that looks cluttered, never one that
+ * edge, not a correctness one: engine/rawBodyResolver.ts's resolveRawBody
+ * resolves an embedded tag correctly regardless, so the worst case is a
+ * field that looks cluttered, never one that
  * silently sends an unresolved placeholder.
  */
 function tagCompletionSource(
@@ -347,22 +349,9 @@ export function buildJsonAutocompleteExtensions(
     json(),
     syntaxHighlighting(jsonHighlightStyle),
     history(),
-    lineNumbers(),
-    // codeFolding() supplies the fold behavior itself (json()'s language
-    // data already knows how to find an object/array's foldable range);
-    // foldGutter() is just the clickable arrow that triggers it in the
-    // line-number gutter added above.
+    allowRandom ? lineNumbers() : null,
     codeFolding(),
     foldGutter(),
-    // Live JSON-syntax validation as you type — a red squiggle under the
-    // offending token plus a hover tooltip with the parser's own message,
-    // same mechanism the Beautify button's own "isn't valid JSON right
-    // now" banner catches at click time (that banner still exists
-    // separately, since a squiggle is easy to miss and Beautify needs to
-    // explain concretely why it did nothing). Shorter than the linter's
-    // own 750ms default debounce — this editor's docs are small enough
-    // that re-parsing on every pause is cheap, and feedback that lags
-    // visibly behind typing reads as broken rather than "not urgent".
     linter(jsonParseLinter(), { delay: 300 }),
     keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap]),
     autocompletion({
@@ -452,6 +441,7 @@ export function RawBodyEditor({
   onChange,
   ancestorNodes,
   nodeLabels,
+  operations,
   readOnly = false,
   showHint = true,
   allowFileUpload = false,
@@ -716,6 +706,7 @@ export function RawBodyEditor({
         <TagConfigModal
           ancestorNodes={ancestorNodes}
           nodeLabels={nodeLabels}
+          operations={operations}
           initialType={pendingInsert.type}
           allowFileUpload={allowFileUpload}
           onConfirm={handleInsertConfirm}
@@ -727,6 +718,7 @@ export function RawBodyEditor({
         <TagConfigModal
           ancestorNodes={ancestorNodes}
           nodeLabels={nodeLabels}
+          operations={operations}
           initialType={editingTag.type}
           initialTag={editingTag}
           allowFileUpload={allowFileUpload}

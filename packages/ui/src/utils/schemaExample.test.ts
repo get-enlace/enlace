@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSchemaExample, hasUnrepresentableShape } from './schemaExample.js';
+import { buildSchemaExample } from './schemaExample.js';
 
 describe('buildSchemaExample', () => {
   it('returns null for a missing schema', () => {
@@ -106,33 +106,5 @@ describe('buildSchemaExample', () => {
       properties: { name: { type: 'string' } },
     };
     expect(buildSchemaExample(schema)).toEqual({ name: null });
-  });
-});
-
-describe('hasUnrepresentableShape', () => {
-  it('is false for a plain flat/nested object schema', () => {
-    const schema = { type: 'object', properties: { name: { type: 'string' }, address: { type: 'object', properties: { city: { type: 'string' } } } } };
-    expect(hasUnrepresentableShape(schema)).toBe(false);
-  });
-
-  it('is false for an array of scalars', () => {
-    const schema = { type: 'object', properties: { tags: { type: 'array', items: { type: 'string' } } } };
-    expect(hasUnrepresentableShape(schema)).toBe(false);
-  });
-
-  it('is true for an array of objects', () => {
-    const schema = { type: 'object', properties: { items: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' } } } } } };
-    expect(hasUnrepresentableShape(schema)).toBe(true);
-  });
-
-  it('is true for a oneOf/anyOf/allOf property anywhere in the tree', () => {
-    expect(hasUnrepresentableShape({ type: 'object', properties: { p: { oneOf: [{ type: 'string' }] } } })).toBe(true);
-    expect(hasUnrepresentableShape({ type: 'object', properties: { p: { anyOf: [{ type: 'string' }] } } })).toBe(true);
-    expect(hasUnrepresentableShape({ type: 'object', properties: { p: { allOf: [{ type: 'string' }] } } })).toBe(true);
-  });
-
-  it('is false for a missing schema', () => {
-    expect(hasUnrepresentableShape(null)).toBe(false);
-    expect(hasUnrepresentableShape(undefined)).toBe(false);
   });
 });

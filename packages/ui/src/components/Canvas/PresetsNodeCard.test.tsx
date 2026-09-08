@@ -7,7 +7,7 @@ import { useWorkflowStore } from '../../store/workflowStore.js';
 import type { PresetsNode, WorkflowNode } from '../../types.js';
 
 function makePresetsNode(overrides: Partial<PresetsNode> = {}): PresetsNode {
-  return { id: 'g1', kind: 'presets', credentialId: null, fieldValues: {}, presets: [], ...overrides };
+  return { id: 'g1', kind: 'presets', credentialId: null, presets: [], ...overrides };
 }
 
 function asPresetsNode(node: WorkflowNode): PresetsNode {

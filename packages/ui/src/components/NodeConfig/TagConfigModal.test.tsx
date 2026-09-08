@@ -6,7 +6,7 @@ import { buildNodeLabels } from '@get-enlace/core';
 import type { Operation, WorkflowNode } from '../../types.js';
 
 function node(id: string, operationId: string): WorkflowNode {
-  return { id, kind: 'operation', operationId, requestMode: 'form', credentialId: null, fieldValues: {} };
+  return { id, kind: 'operation', operationId, credentialId: null };
 }
 
 const ops: Operation[] = [
@@ -18,6 +18,21 @@ const ops: Operation[] = [
     requestBodySchema: null,
     requestBodyContentType: null,
     responseSchema: null,
+  },
+  {
+    id: 'GET /orders',
+    method: 'get',
+    path: '/orders',
+    parameters: [],
+    requestBodySchema: null,
+    requestBodyContentType: null,
+    responseSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        total: { type: 'integer' },
+      },
+    },
   },
 ];
 const opsById = new Map(ops.map((o) => [o.id, o]));
@@ -34,6 +49,7 @@ describe('TagConfigModal', () => {
       <TagConfigModal
         ancestorNodes={[]}
         nodeLabels={labelsFor([])}
+        operations={ops}
         initialType="response_body"
         onConfirm={onConfirm}
         onCancel={() => {}}
@@ -49,6 +65,7 @@ describe('TagConfigModal', () => {
       <TagConfigModal
         ancestorNodes={[a]}
         nodeLabels={labelsFor([a])}
+        operations={ops}
         initialType="response_body"
         onConfirm={onConfirm}
         onCancel={() => {}}
@@ -70,6 +87,7 @@ describe('TagConfigModal', () => {
       <TagConfigModal
         ancestorNodes={[a]}
         nodeLabels={labelsFor([a])}
+        operations={ops}
         initialType="response_header"
         onConfirm={onConfirm}
         onCancel={() => {}}
@@ -89,7 +107,14 @@ describe('TagConfigModal', () => {
   it('shows "no prior run" preview text when the source node has no captured response', () => {
     const a = node('node-a', 'GET /orders/{id}');
     render(
-      <TagConfigModal ancestorNodes={[a]} nodeLabels={labelsFor([a])} initialType="response_body" onConfirm={() => {}} onCancel={() => {}} />
+      <TagConfigModal
+        ancestorNodes={[a]}
+        nodeLabels={labelsFor([a])}
+        operations={ops}
+        initialType="response_body"
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />
     );
     expect(screen.getByText(/No prior run captured/)).toBeInTheDocument();
   });
@@ -110,7 +135,14 @@ describe('TagConfigModal', () => {
     });
     const a = node('node-a', 'GET /orders/{id}');
     render(
-      <TagConfigModal ancestorNodes={[a]} nodeLabels={labelsFor([a])} initialType="response_body" onConfirm={() => {}} onCancel={() => {}} />
+      <TagConfigModal
+        ancestorNodes={[a]}
+        nodeLabels={labelsFor([a])}
+        operations={ops}
+        initialType="response_body"
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />
     );
     fireEvent.change(screen.getByPlaceholderText(/blank = whole body/), { target: { value: 'items[0].id' } });
     expect(screen.getByText('"xyz"')).toBeInTheDocument();
@@ -123,6 +155,7 @@ describe('TagConfigModal', () => {
       <TagConfigModal
         ancestorNodes={[a]}
         nodeLabels={labelsFor([a])}
+        operations={ops}
         initialType="response_body"
         initialTag={{ id: 'tag1', type: 'response_body', sourceNodeId: 'node-a', jsonPath: 'items[0].id' }}
         onConfirm={() => {}}
@@ -150,6 +183,7 @@ describe('TagConfigModal', () => {
       <TagConfigModal
         ancestorNodes={[replacement]}
         nodeLabels={labelsFor([replacement])}
+        operations={ops}
         initialType="response_body"
         initialTag={{ id: 'tag1', type: 'response_body', sourceNodeId: 'node-deleted', jsonPath: 'item.title' }}
         onConfirm={onConfirm}
@@ -170,10 +204,87 @@ describe('TagConfigModal', () => {
     expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ sourceNodeId: 'node-b' }));
   });
 
+  describe('jsonPath autocomplete', () => {
+    // Regression coverage for the type-safety follow-up to dropping Form
+    // mode: the "Filter (JSONPath)" input used to be entirely blind typing
+    // — no way to discover a real response field short of running the
+    // chain first. It's now backed by a <datalist> of the selected
+    // source's actual response fields (flattenSchema.ts's
+    // flattenResponseFields), same low-tech pattern as the `$rand.`
+    // methods datalist elsewhere in Node Config.
+    it("offers the selected source's response fields, with their type, as datalist options", () => {
+      const a = node('node-a', 'GET /orders');
+      render(
+        <TagConfigModal
+          ancestorNodes={[a]}
+          nodeLabels={labelsFor([a])}
+          operations={ops}
+          initialType="response_body"
+          onConfirm={() => {}}
+          onCancel={() => {}}
+        />
+      );
+
+      const input = screen.getByPlaceholderText(/blank = whole body/);
+      const listId = input.getAttribute('list');
+      expect(listId).toBeTruthy();
+      // getElementById, not a template-literal CSS selector — useId() ids
+      // contain `:`, which isn't a valid bare selector character.
+      // eslint-disable-next-line testing-library/no-node-access -- datalist options aren't exposed via any RTL query
+      const options = [...document.getElementById(listId!)!.querySelectorAll('option')].map((o) => o.getAttribute('value'));
+      expect(options).toEqual(['id', 'total']);
+    });
+
+    it('has no datalist options when the source operation declares no response schema', () => {
+      const a = node('node-a', 'GET /orders/{id}');
+      render(
+        <TagConfigModal
+          ancestorNodes={[a]}
+          nodeLabels={labelsFor([a])}
+          operations={ops}
+          initialType="response_body"
+          onConfirm={() => {}}
+          onCancel={() => {}}
+        />
+      );
+      expect(document.querySelector('datalist')).not.toBeInTheDocument();
+    });
+
+    it('updates the offered fields when the selected source node changes', () => {
+      const a = node('node-a', 'GET /orders/{id}');
+      const b = node('node-b', 'GET /orders');
+      render(
+        <TagConfigModal
+          ancestorNodes={[a, b]}
+          nodeLabels={labelsFor([a, b])}
+          operations={ops}
+          initialType="response_body"
+          onConfirm={() => {}}
+          onCancel={() => {}}
+        />
+      );
+      expect(document.querySelector('datalist')).not.toBeInTheDocument();
+
+      fireEvent.change(screen.getByLabelText('Request'), { target: { value: 'node-b' } });
+      const input = screen.getByPlaceholderText(/blank = whole body/);
+      const listId = input.getAttribute('list');
+      // eslint-disable-next-line testing-library/no-node-access -- datalist options aren't exposed via any RTL query
+      const options = [...document.getElementById(listId!)!.querySelectorAll('option')].map((o) => o.getAttribute('value'));
+      expect(options).toEqual(['id', 'total']);
+    });
+  });
+
   describe('uploaded_file', () => {
     it('does not offer "Upload file" unless allowFileUpload is set', () => {
       render(
-        <TagConfigModal ancestorNodes={[]} nodeLabels={labelsFor([])} initialType="response_body" onConfirm={() => {}} onCancel={() => {}} />
+        <TagConfigModal
+          ancestorNodes={[]}
+          nodeLabels={labelsFor([])}
+          operations={ops}
+          initialType="response_body"
+          onConfirm={() => {}}
+          onCancel={() => {}}
+        />
       );
       expect(screen.queryByText('Upload file')).not.toBeInTheDocument();
     });
@@ -184,6 +295,7 @@ describe('TagConfigModal', () => {
         <TagConfigModal
           ancestorNodes={[]}
           nodeLabels={labelsFor([])}
+          operations={ops}
           initialType="uploaded_file"
           allowFileUpload
           onConfirm={onConfirm}
@@ -210,6 +322,7 @@ describe('TagConfigModal', () => {
         <TagConfigModal
           ancestorNodes={[]}
           nodeLabels={labelsFor([])}
+          operations={ops}
           initialType="uploaded_file"
           initialTag={{ id: 'tag1', type: 'uploaded_file', fileName: 'old.png' }}
           allowFileUpload
@@ -233,6 +346,7 @@ describe('TagConfigModal', () => {
         <TagConfigModal
           ancestorNodes={[]}
           nodeLabels={labelsFor([])}
+          operations={ops}
           initialType="uploaded_file"
           initialTag={{ id: 'tag1', type: 'uploaded_file', fileName: 'old.png' }}
           allowFileUpload

@@ -1,36 +1,18 @@
 import { resolveCredentialInjection } from '../credentials.js';
 import { resolveRawBody } from '../rawBodyResolver.js';
-import { getByPath, setByPath } from '../path.js';
-import { rawFileTagFieldPath, resolveTagsInValue } from '../../bodyTags.js';
-import { resolveRandomExpressionsInValue } from '../randomExpr.js';
+import { getByPath } from '../path.js';
+import { rawFileTagFieldPath } from '../../bodyTags.js';
 import type { Credential, FieldValue, Operation, RunStep, RunStepRequest, WorkflowNode } from '../../types.js';
 import { asOperationNode } from './guards.js';
 import type { NodeHandler, NodeHandlerContext } from './index.js';
 
-function resolveFieldValue(
-  fieldValue: FieldValue,
-  fieldPath: string,
-  nodeId: string,
-  stepsByNodeId: Map<string, RunStep>,
-  uploadedFiles: Record<string, File>
-): unknown {
+// FieldValue is only ever 'static' or 'mapped' now (see types.ts's own
+// comment) — the only remaining caller is credentialExtraParamOverrides'
+// loop below, a small separate picker (CredentialParamOverrideRow.tsx), not
+// the request body/path/query/header sections, which are Raw JSON only and
+// resolved via resolveRawBody instead.
+function resolveFieldValue(fieldValue: FieldValue, stepsByNodeId: Map<string, RunStep>): unknown {
   if (fieldValue.source === 'static') return fieldValue.value;
-  // Not resolved here — just handed back as literal text. The actual
-  // `$rand.method(args)` call runs in the per-field loop below
-  // (resolveRandomExpressionsInValue), same choke point a `static` value
-  // embedding a stray `{{enlace:<id>}}` tag already goes through, and for
-  // the same reason: this function only unwraps a `FieldValue`'s own
-  // shape, it doesn't know about either resolution syntax.
-  if (fieldValue.source === 'random') return fieldValue.expression;
-  if (fieldValue.source === 'file') {
-    const file = uploadedFiles[`${nodeId}::${fieldPath}`];
-    if (!file) {
-      throw new Error(
-        `Re-select the file for "${fieldPath}"${fieldValue.fileName ? ` (${fieldValue.fileName})` : ''} — file contents are not persisted.`
-      );
-    }
-    return file;
-  }
   const priorStep = stepsByNodeId.get(fieldValue.fromNodeId);
   return getByPath(priorStep?.response?.body, fieldValue.fromResponseFieldPath);
 }
@@ -61,68 +43,36 @@ export async function buildRequest(
   const query = new URLSearchParams();
   const isMultipart = operation.requestBodyContentType === 'multipart/form-data';
   const headers: Record<string, string> = isMultipart ? {} : { 'Content-Type': 'application/json' };
-  const bodyFields: Record<string, unknown> = {};
-  // No longer forced to 'form' for multipart — Raw mode can hold a
-  // multipart body's fields too, including a file (see the `isMultipart`
-  // branch below and rawBodyResolver.ts's `uploaded_file` handling).
-  const requestMode = node.requestMode ?? 'form';
 
-  // A field's static value can itself contain a `{{enlace:<id>}}` reference
-  // even in Form mode — not something the form UI lets you type
-  // deliberately, but a Raw JSON tag chip that ended up embedded in a
-  // larger string (e.g. "Bearer {{enlace:...}}") survives a lossy Raw ->
-  // Form conversion as literal text in a static field (see
-  // utils/bodyTemplate.ts): the "Map from..." UI for it is gone, but the
-  // mapping itself shouldn't silently stop working, so it's resolved here
-  // too — against tags any raw section still carries even once
-  // `requestMode` is back to `'form'` (switching modes never clears them).
-  const nodeTags = { ...node.rawPath?.tags, ...node.rawQuery?.tags, ...node.rawBody?.tags };
-
-  for (const [fieldPath, fieldValue] of Object.entries(node.fieldValues)) {
-    const [section, ...rest] = fieldPath.split('.');
-    // Raw mode owns path/query/body from their templates; form fieldValues
-    // for those sections are ignored until the user switches back.
-    if (requestMode === 'raw' && (section === 'path' || section === 'query' || section === 'body')) {
-      continue;
-    }
-
-    let value = resolveFieldValue(fieldValue, fieldPath, node.id, stepsByNodeId, uploadedFiles);
-    if (fieldValue.source !== 'file') {
-      value = resolveRandomExpressionsInValue(value);
-    }
-    if (fieldValue.source !== 'file' && Object.keys(nodeTags).length > 0) {
-      value = resolveTagsInValue(value, nodeTags, stepsByNodeId, nodeLabels);
-    }
-    const key = rest.join('.');
-
-    if (section === 'path') {
-      requestPath = requestPath.replace(`{${key}}`, encodeURIComponent(String(value ?? '')));
-    } else if (section === 'query') {
-      if (value !== undefined) query.set(key, String(value));
-    } else if (section === 'header') {
-      if (value !== undefined) headers[key] = String(value);
-    } else if (section === 'body') {
-      setByPath(bodyFields, key, value);
-    }
-  }
-
-  if (requestMode === 'raw') {
-    if (node.rawPath) {
-      const pathObj = resolveRawBody(node.rawPath, stepsByNodeId, nodeLabels);
-      if (pathObj && typeof pathObj === 'object' && !Array.isArray(pathObj)) {
-        for (const [key, value] of Object.entries(pathObj as Record<string, unknown>)) {
-          if (value === undefined || value === null) continue;
-          requestPath = requestPath.replace(`{${key}}`, encodeURIComponent(String(value)));
-        }
+  // Every section is Raw JSON — see OperationNode's own comment in types.ts
+  // for why there's no per-leaf Form-mode field loop here any more. Each
+  // section resolves independently via resolveRawBody (tag chips + $rand.
+  // calls substituted against already-captured responses); an absent
+  // section (no path params, no body, etc.) just contributes nothing.
+  if (node.rawPath) {
+    const pathObj = resolveRawBody(node.rawPath, stepsByNodeId, nodeLabels);
+    if (pathObj && typeof pathObj === 'object' && !Array.isArray(pathObj)) {
+      for (const [key, value] of Object.entries(pathObj as Record<string, unknown>)) {
+        if (value === undefined || value === null) continue;
+        requestPath = requestPath.replace(`{${key}}`, encodeURIComponent(String(value)));
       }
     }
-    if (node.rawQuery) {
-      const queryObj = resolveRawBody(node.rawQuery, stepsByNodeId, nodeLabels);
-      if (queryObj && typeof queryObj === 'object' && !Array.isArray(queryObj)) {
-        for (const [key, value] of Object.entries(queryObj as Record<string, unknown>)) {
-          if (value === undefined || value === null) continue;
-          query.set(key, typeof value === 'string' ? value : String(value));
-        }
+  }
+  if (node.rawQuery) {
+    const queryObj = resolveRawBody(node.rawQuery, stepsByNodeId, nodeLabels);
+    if (queryObj && typeof queryObj === 'object' && !Array.isArray(queryObj)) {
+      for (const [key, value] of Object.entries(queryObj as Record<string, unknown>)) {
+        if (value === undefined || value === null) continue;
+        query.set(key, typeof value === 'string' ? value : String(value));
+      }
+    }
+  }
+  if (node.rawHeaders) {
+    const headersObj = resolveRawBody(node.rawHeaders, stepsByNodeId, nodeLabels);
+    if (headersObj && typeof headersObj === 'object' && !Array.isArray(headersObj)) {
+      for (const [key, value] of Object.entries(headersObj as Record<string, unknown>)) {
+        if (value === undefined || value === null) continue;
+        headers[key] = typeof value === 'string' ? value : String(value);
       }
     }
   }
@@ -159,13 +109,7 @@ export async function buildRequest(
       let extraTokenParamOverrides: Record<string, string> | undefined;
       if (node.credentialExtraParamOverridesEnabled) {
         for (const [key, fieldValue] of Object.entries(node.credentialExtraParamOverrides ?? {})) {
-          const value = resolveFieldValue(
-            fieldValue,
-            `credential.extraTokenParams.${key}`,
-            node.id,
-            stepsByNodeId,
-            uploadedFiles
-          );
+          const value = resolveFieldValue(fieldValue, stepsByNodeId);
           if (value === undefined) continue;
           extraTokenParamOverrides ??= {};
           extraTokenParamOverrides[key] = String(value);
@@ -184,38 +128,31 @@ export async function buildRequest(
   const queryString = query.toString();
   const url = `${baseUrl}${requestPath}${queryString ? `?${queryString}` : ''}`;
 
-  // Raw JSON mode bypasses the per-leaf `fieldValues['body.*']` fields
-  // entirely — the whole body comes from resolving the node's own
-  // `rawBody` template (tag chips substituted against `stepsByNodeId`;
-  // see engine/rawBodyResolver.ts). A throw here (unknown tag, missing
-  // source response, missing header, un-reselected file) is caught by
-  // runNode's existing try/catch around buildRequest, same as any other
+  // The whole body comes from resolving the node's own `rawBody` template
+  // (tag chips substituted against `stepsByNodeId`; see
+  // engine/rawBodyResolver.ts). A throw here (unknown tag, missing source
+  // response, missing header, un-reselected file) is caught by runNode's
+  // existing try/catch around buildRequest, same as any other
   // request-building failure — no separate error path needed.
   let body: unknown;
   if (isMultipart) {
-    // Raw mode's fields come from resolveRawBody the same as a JSON body
-    // does, just with a `fileLookup` passed — that's what lets its template
-    // hold an `uploaded_file` tag at all (see rawBodyResolver.ts), resolved
-    // against the same `uploadedFiles` map a Form-mode file field already
-    // uses, keyed the same way (`${nodeId}::${fieldPath}`) with
-    // `rawFileTagFieldPath` standing in for the field path a raw tag
-    // doesn't have. Either way, the result still goes through the same
-    // appendFormData — it already special-cases a real `File` value
-    // regardless of which mode produced it.
-    const fields =
-      requestMode === 'raw' && node.rawBody
-        ? (resolveRawBody(
-            node.rawBody,
-            stepsByNodeId,
-            nodeLabels,
-            (tagId) => uploadedFiles[`${node.id}::${rawFileTagFieldPath(tagId)}`]
-          ) as Record<string, unknown>)
-        : bodyFields;
+    // A `fileLookup` is what lets the template hold an `uploaded_file` tag
+    // at all (see rawBodyResolver.ts), resolved against the same
+    // `uploadedFiles` map a real file blob lives in, keyed the same way
+    // (`${nodeId}::${fieldPath}`) with `rawFileTagFieldPath` standing in for
+    // the field path a raw tag doesn't have. The result goes through
+    // appendFormData — it already special-cases a real `File` value.
+    const fields = node.rawBody
+      ? (resolveRawBody(
+          node.rawBody,
+          stepsByNodeId,
+          nodeLabels,
+          (tagId) => uploadedFiles[`${node.id}::${rawFileTagFieldPath(tagId)}`]
+        ) as Record<string, unknown>)
+      : {};
     body = Object.keys(fields).length > 0 ? appendFormData(fields) : undefined;
-  } else if (requestMode === 'raw' && node.rawBody) {
+  } else if (node.rawBody) {
     body = resolveRawBody(node.rawBody, stepsByNodeId, nodeLabels);
-  } else {
-    body = Object.keys(bodyFields).length > 0 ? bodyFields : undefined;
   }
   const hasBody = Boolean(operation.requestBodySchema) && body !== undefined;
 

@@ -9,7 +9,6 @@ import type {
   CredentialStub,
   CredentialType,
   EnlaceCollection,
-  FieldValue,
   Preset,
   NodeGroup,
   Operation,
@@ -336,14 +335,13 @@ export function referencedIncompleteCredentials(
 
 function serializeNode(node: WorkflowNode): WorkflowNode {
   // A presets collection carries none of the operation-only fields below
-  // (operationId, requestMode, raw*, credential overrides) — writing them
-  // anyway would round-trip meaningless stray keys.
+  // (operationId, raw*, credential overrides) — writing them anyway would
+  // round-trip meaningless stray keys.
   if (node.kind === 'presets') {
     return {
       id: node.id,
       kind: 'presets',
       credentialId: null,
-      fieldValues: {},
       presets: (node.presets ?? []).map((p) => ({ ...p })),
     };
   }
@@ -352,12 +350,11 @@ function serializeNode(node: WorkflowNode): WorkflowNode {
     id: node.id,
     kind: 'operation',
     operationId: node.operationId,
-    requestMode: node.requestMode,
     credentialId: node.credentialId ?? null,
-    fieldValues: { ...node.fieldValues },
   };
   if (node.rawPath) out.rawPath = cloneRawBody(node.rawPath);
   if (node.rawQuery) out.rawQuery = cloneRawBody(node.rawQuery);
+  if (node.rawHeaders) out.rawHeaders = cloneRawBody(node.rawHeaders);
   if (node.rawBody) out.rawBody = cloneRawBody(node.rawBody);
   return out;
 }
@@ -517,7 +514,7 @@ function parseNode(raw: unknown, index: number): WorkflowNode | string {
   if (raw.kind === 'presets') {
     const presets = parsePresetsList(raw.presets, raw.id);
     if (typeof presets === 'string') return presets;
-    return { id: raw.id, kind: 'presets', credentialId: null, fieldValues: {}, presets };
+    return { id: raw.id, kind: 'presets', credentialId: null, presets };
   }
 
   if (typeof raw.operationId !== 'string') {
@@ -526,22 +523,20 @@ function parseNode(raw: unknown, index: number): WorkflowNode | string {
   if (raw.credentialId != null && typeof raw.credentialId !== 'string') {
     return `Enlace collection node "${raw.id}" has an invalid credentialId.`;
   }
-  const fieldValues = parseFieldValues(raw.fieldValues, raw.id);
-  if (typeof fieldValues === 'string') return fieldValues;
-  if (raw.requestMode !== 'form' && raw.requestMode !== 'raw') {
-    return `Enlace collection node "${raw.id}" has an invalid requestMode.`;
-  }
 
   const node: WorkflowNode = {
     id: raw.id,
     kind: 'operation',
     operationId: raw.operationId,
-    requestMode: raw.requestMode,
     credentialId: typeof raw.credentialId === 'string' ? raw.credentialId : null,
-    fieldValues,
   };
 
-  for (const key of ['rawPath', 'rawQuery', 'rawBody'] as const) {
+  // `requestMode`/`fieldValues` may still be present in an older export
+  // (from before Form mode was dropped) — silently ignored rather than
+  // rejected outright, same forward-tolerant spirit as any other stray key;
+  // an old file's static/mapped values just don't carry over (no migration
+  // path, since nothing had shipped to real users while Form mode existed).
+  for (const key of ['rawPath', 'rawQuery', 'rawHeaders', 'rawBody'] as const) {
     if (raw[key] != null) {
       const parsed = parseRawBody(raw[key], raw.id, key);
       if (typeof parsed === 'string') return parsed;
@@ -628,45 +623,6 @@ function parsePresetsList(raw: unknown, presetsNodeId: string): Preset[] | strin
     }
   }
   return presets;
-}
-
-function parseFieldValues(raw: unknown, nodeId: string): Record<string, FieldValue> | string {
-  if (raw == null) return {};
-  if (!isRecord(raw)) return `Enlace collection node "${nodeId}" has invalid fieldValues.`;
-  const out: Record<string, FieldValue> = {};
-  for (const [path, value] of Object.entries(raw)) {
-    if (isUnsafeKey(path)) {
-      return `Enlace collection node "${nodeId}" has an invalid field path "${path}".`;
-    }
-    if (
-      !isRecord(value) ||
-      (value.source !== 'static' && value.source !== 'mapped' && value.source !== 'file' && value.source !== 'random')
-    ) {
-      return `Enlace collection node "${nodeId}" has an invalid field value at "${path}".`;
-    }
-    if (value.source === 'static') {
-      out[path] = { source: 'static', value: value.value };
-    } else if (value.source === 'file') {
-      if (typeof value.fileName !== 'string') {
-        return `Enlace collection node "${nodeId}" has an invalid file field at "${path}".`;
-      }
-      out[path] = { source: 'file', fileName: value.fileName };
-    } else if (value.source === 'random') {
-      if (typeof value.expression !== 'string') {
-        return `Enlace collection node "${nodeId}" has an invalid random field at "${path}".`;
-      }
-      out[path] = { source: 'random', expression: value.expression };
-    } else if (typeof value.fromNodeId === 'string' && typeof value.fromResponseFieldPath === 'string') {
-      out[path] = {
-        source: 'mapped',
-        fromNodeId: value.fromNodeId,
-        fromResponseFieldPath: value.fromResponseFieldPath,
-      };
-    } else {
-      return `Enlace collection node "${nodeId}" has an invalid mapped field at "${path}".`;
-    }
-  }
-  return out;
 }
 
 function parseRawBody(raw: unknown, nodeId: string, fieldName = 'rawBody'): RawBody | string {
@@ -955,9 +911,9 @@ function cloneRawBody(rawBody: RawBody): RawBody {
 }
 
 /**
- * `nodePositions`, `fieldValues`, and raw-body `tags` are all built by
- * bracket-assigning an imported file's own keys (node ids / field paths /
- * tag ids) into a plain `{}`. Assigning the literal key `"__proto__"` that
+ * `nodePositions` and raw-body `tags` are both built by bracket-assigning
+ * an imported file's own keys (node ids / tag ids) into a plain `{}`.
+ * Assigning the literal key `"__proto__"` that
  * way doesn't add an entry — `Object.prototype`'s `__proto__` is an
  * accessor (Annex B), so `obj['__proto__'] = x` reassigns `obj`'s own
  * prototype to `x` instead, silently dropping the entry and corrupting the

@@ -10,7 +10,7 @@ import { buildNodeLabels } from '@get-enlace/core';
 import type { BodyTag, Operation, RawBody, WorkflowNode } from '../../types.js';
 
 function node(id: string, operationId: string): WorkflowNode {
-  return { id, kind: 'operation', operationId, requestMode: 'form', credentialId: null, fieldValues: {} };
+  return { id, kind: 'operation', operationId, credentialId: null };
 }
 
 const ops: Operation[] = [
@@ -33,7 +33,7 @@ describe('RawBodyEditor', () => {
   it('renders the initial template text inside the CodeMirror doc', async () => {
     const rawBody: RawBody = { template: '{"name":"widget"}', tags: {} };
     const { container } = render(
-      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} />
+      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} operations={[]} />
     );
     await waitFor(() => {
       expect(container.querySelector('.cm-content')?.textContent).toContain('widget');
@@ -47,7 +47,7 @@ describe('RawBodyEditor', () => {
       tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: 'node-a', jsonPath: 'item.title' } },
     };
     const { container } = render(
-      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[a]} nodeLabels={labelsFor([a])} />
+      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[a]} nodeLabels={labelsFor([a])} operations={[]} />
     );
     await waitFor(() => {
       expect(container.querySelector('.tag-chip')).toBeTruthy();
@@ -66,7 +66,7 @@ describe('RawBodyEditor', () => {
         template: '{"name":"{{enlace:tag1}}"}',
         tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: 'node-deleted', jsonPath: 'item.title' } },
       });
-      return <RawBodyEditor rawBody={rawBody} onChange={setRawBody} ancestorNodes={[validNode]} nodeLabels={labelsFor([validNode])} />;
+      return <RawBodyEditor rawBody={rawBody} onChange={setRawBody} ancestorNodes={[validNode]} nodeLabels={labelsFor([validNode])} operations={[]} />;
     }
 
     const { container } = render(<Harness />);
@@ -95,7 +95,7 @@ describe('RawBodyEditor', () => {
       tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: 'node-deleted', jsonPath: 'item.title' } },
     };
     const { container } = render(
-      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} />
+      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} operations={[]} />
     );
     const chip = await waitFor(() => {
       const el = container.querySelector('.tag-chip');
@@ -112,7 +112,7 @@ describe('RawBodyEditor', () => {
     // syntax but has no BodyTag behind it at all.
     const rawBody: RawBody = { template: '{"name":"{{enlace:ghost}}"}', tags: {} };
     const { container } = render(
-      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} />
+      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} operations={[]} />
     );
     const chip = await waitFor(() => {
       const el = container.querySelector('.tag-chip');
@@ -135,7 +135,7 @@ describe('RawBodyEditor', () => {
       tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: 'node-a', jsonPath: 'item.title' } },
     };
     const { container } = render(
-      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[a]} nodeLabels={labelsFor([a])} />
+      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[a]} nodeLabels={labelsFor([a])} operations={[]} />
     );
     const chip = await waitFor(() => {
       const el = container.querySelector('.tag-chip');
@@ -161,7 +161,7 @@ describe('RawBodyEditor', () => {
       tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: 'node-a', jsonPath: 'item.title' } },
     };
     const { container } = render(
-      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[a]} nodeLabels={labelsFor([a])} />
+      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[a]} nodeLabels={labelsFor([a])} operations={[]} />
     );
     const chip = await waitFor(() => {
       const el = container.querySelector('.tag-chip');
@@ -187,7 +187,7 @@ describe('RawBodyEditor', () => {
       tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: 'node-a', jsonPath: 'item.title' } },
     };
     const { container } = render(
-      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[a]} nodeLabels={labelsFor([a])} />
+      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[a]} nodeLabels={labelsFor([a])} operations={[]} />
     );
     const chip = await waitFor(() => {
       const el = container.querySelector('.tag-chip');
@@ -212,7 +212,7 @@ describe('RawBodyEditor', () => {
     };
     const onChange = vi.fn();
     const { container } = render(
-      <RawBodyEditor rawBody={rawBody} onChange={onChange} ancestorNodes={[a]} nodeLabels={labelsFor([a])} />
+      <RawBodyEditor rawBody={rawBody} onChange={onChange} ancestorNodes={[a]} nodeLabels={labelsFor([a])} operations={[]} />
     );
     const chip = await waitFor(() => {
       const el = container.querySelector('.tag-chip');
@@ -236,7 +236,7 @@ describe('RawBodyEditor', () => {
     // dark palette, so an un-flipped editor has a black-on-black,
     // effectively invisible caret — it blinks, it's just never seen.
     const rawBody: RawBody = { template: '{"a":1}', tags: {} };
-    const { container } = render(<RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} />);
+    const { container } = render(<RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} operations={[]} />);
     const content = await waitFor(() => {
       const el = container.querySelector('.cm-content');
       expect(el).toBeTruthy();
@@ -455,7 +455,7 @@ describe('RawBodyEditor', () => {
       template: '{"image":"{{enlace:tag1}}"}',
       tags: { tag1: { id: 'tag1', type: 'uploaded_file', fileName: 'photo.png' } },
     };
-    const { container } = render(<RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} />);
+    const { container } = render(<RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} operations={[]} />);
     await waitFor(() => {
       expect(container.querySelector('.tag-chip')).toBeTruthy();
     });
@@ -575,7 +575,7 @@ describe('RawBodyEditor', () => {
     it('makes the CodeMirror doc non-editable and rejects a programmatic edit transaction', async () => {
       const rawBody: RawBody = { template: '{"name":"widget"}', tags: {} };
       const { container } = render(
-        <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} readOnly />
+        <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} operations={[]} readOnly />
       );
       await waitFor(() => {
         expect(container.querySelector('.cm-content')?.getAttribute('contenteditable')).toBe('false');
@@ -585,7 +585,7 @@ describe('RawBodyEditor', () => {
     it('is editable (the default) when readOnly is omitted', async () => {
       const rawBody: RawBody = { template: '{"name":"widget"}', tags: {} };
       const { container } = render(
-        <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} />
+        <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} operations={[]} />
       );
       await waitFor(() => {
         expect(container.querySelector('.cm-content')?.getAttribute('contenteditable')).toBe('true');
@@ -599,7 +599,7 @@ describe('RawBodyEditor', () => {
         return (
           <>
             <button onClick={() => setReadOnly((v) => !v)}>toggle</button>
-            <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} readOnly={readOnly} />
+            <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} operations={[]} readOnly={readOnly} />
           </>
         );
       }
@@ -626,7 +626,7 @@ describe('RawBodyEditor', () => {
       // showing", which is all this asserts.
       const rawBody: RawBody = { template: '{"name":', tags: {} };
       const { container } = render(
-        <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} />
+        <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} operations={[]} />
       );
       await waitFor(
         () => {
@@ -639,7 +639,7 @@ describe('RawBodyEditor', () => {
     it('has no lint diagnostic for valid JSON', async () => {
       const rawBody: RawBody = { template: '{"name":"widget"}', tags: {} };
       const { container } = render(
-        <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} />
+        <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} operations={[]} />
       );
       await waitFor(() => {
         expect(container.querySelector('.cm-content')?.textContent).toContain('widget');
@@ -654,7 +654,7 @@ describe('RawBodyEditor', () => {
     it('reformats compact JSON to standard 2-space indentation', async () => {
       function Harness() {
         const [rawBody, setRawBody] = useState<RawBody>({ template: '{"name":"widget","qty":3}', tags: {} });
-        return <RawBodyEditor rawBody={rawBody} onChange={setRawBody} ancestorNodes={[]} nodeLabels={labelsFor([])} />;
+        return <RawBodyEditor rawBody={rawBody} onChange={setRawBody} ancestorNodes={[]} nodeLabels={labelsFor([])} operations={[]} />;
       }
       const { container } = render(<Harness />);
       await waitFor(() => {
@@ -674,7 +674,7 @@ describe('RawBodyEditor', () => {
     it('shows an error and leaves the document untouched instead of throwing on invalid JSON', async () => {
       const rawBody: RawBody = { template: '{"name":', tags: {} };
       const { container } = render(
-        <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} />
+        <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} operations={[]} />
       );
       await waitFor(() => {
         expect(container.querySelector('.cm-content')).toBeTruthy();
@@ -688,7 +688,7 @@ describe('RawBodyEditor', () => {
 
     it('is disabled while the editor is read-only', async () => {
       const rawBody: RawBody = { template: '{"name":"widget"}', tags: {} };
-      render(<RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} readOnly />);
+      render(<RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} operations={[]} readOnly />);
       expect(await screen.findByRole('button', { name: 'Beautify JSON' })).toBeDisabled();
     });
   });

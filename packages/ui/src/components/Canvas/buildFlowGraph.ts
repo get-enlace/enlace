@@ -11,6 +11,26 @@ import type { GroupMemberSummary, GroupNodeData } from './GroupNodeCard.js';
 import type { WorkflowNodeData } from './WorkflowNodeCard.js';
 import type { PresetsNodeData } from './PresetsNodeCard.js';
 
+/**
+ * Every ancestor node id a node's Raw JSON sections (path/query/headers/
+ * body) map a value *from*, via a tag chip — the source of a "mapped data
+ * flow" edge below. Deliberately not deduped: two tags mapping from the
+ * same ancestor (e.g. path and body both pulling from the same upstream
+ * response) draw two overlapping edges, same as two Form-mode mapped
+ * fields used to.
+ */
+function mappedSourceNodeIds(node: WorkflowNode): string[] {
+  if (node.kind !== 'operation') return [];
+  const ids: string[] = [];
+  for (const raw of [node.rawPath, node.rawQuery, node.rawHeaders, node.rawBody]) {
+    if (!raw) continue;
+    for (const tag of Object.values(raw.tags)) {
+      if (tag.type !== 'uploaded_file') ids.push(tag.sourceNodeId);
+    }
+  }
+  return ids;
+}
+
 export function collapsedMemberIdSet(groups: NodeGroup[]): Set<string> {
   const ids = new Set<string>();
   for (const g of groups) {
@@ -166,13 +186,12 @@ export function buildFlowEdges(args: {
   };
 
   for (const node of nodes) {
-    for (const fieldValue of Object.values(node.fieldValues)) {
-      if (fieldValue.source !== 'mapped') continue;
-      const source = resolveEndpoint(fieldValue.fromNodeId);
+    for (const fromNodeId of mappedSourceNodeIds(node)) {
+      const source = resolveEndpoint(fromNodeId);
       const target = resolveEndpoint(node.id);
       if (source === target && groups.some((g) => g.id === source && g.collapsed)) continue;
       edges.push({
-        id: `map-${fieldValue.fromNodeId}->${node.id}-${edges.length}`,
+        id: `map-${fromNodeId}->${node.id}-${edges.length}`,
         source,
         target,
         className: 'edge-mapping',

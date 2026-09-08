@@ -15,20 +15,15 @@ export function NodeConfigHeader({
   selectedCredential,
   credentials,
   onSelectCredential,
-  bodyMode,
   hasBody,
-  showMapFromHint,
   selectedNodeId,
 }: {
   operation: Operation;
   selectedCredential: Credential | null;
   credentials: Credential[];
   onSelectCredential: (credentialId: string | null) => void;
-  bodyMode: 'form' | 'raw';
-  /** Whether this operation has a request body at all — gates the body-only tips in the help tooltip (Random source / `$rand.` completion, both body-only — see NodeConfig.tsx). */
+  /** Whether this operation has a request body at all — gates the body-only tips in the help tooltip (`$rand.` completion — see NodeConfig.tsx). */
   hasBody: boolean;
-  /** Form mode only: whether the "connect a node" tip is relevant right now (no ancestors yet, but there's at least one field that could map from one). */
-  showMapFromHint: boolean;
   /** Closes both popovers when the selected node changes, so a leftover menu doesn't sit open under a different operation's title. */
   selectedNodeId: string | null;
 }) {
@@ -111,30 +106,14 @@ export function NodeConfigHeader({
           </button>
           {infoOpen && (
             <div className="node-config__info-tooltip" role="tooltip">
-              {bodyMode === 'form' ? (
-                <>
-                  {showMapFromHint && (
-                    <p>Connect this node from another on the canvas (drag box to box) to enable "Map from...".</p>
-                  )}
-                  {hasBody && (
-                    <p>
-                      Body fields can generate random data — set a field's source to "Random", or use the dice icon
-                      above Body to fill every field at once.
-                    </p>
-                  )}
-                </>
-              ) : (
-                <>
-                  <p>
-                    Type <code>{'{{'}</code> inside a string to map a value from an upstream response.
-                  </p>
-                  {hasBody && (
-                    <p>
-                      In the Body editor, type <code>{'$rand.'}</code> for a random value (autocompletes as you
-                      type), or use the dice icon to fill the whole body at once.
-                    </p>
-                  )}
-                </>
+              <p>
+                Type <code>{'{{'}</code> inside a string to map a value from an upstream response.
+              </p>
+              {hasBody && (
+                <p>
+                  In the Body editor, type <code>{'$rand.'}</code> for a random value (autocompletes as you
+                  type).
+                </p>
               )}
             </div>
           )}

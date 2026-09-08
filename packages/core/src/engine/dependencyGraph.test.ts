@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { computeAncestors } from './dependencyGraph.js';
 import type { OperationNode, WorkflowConnection, WorkflowNode } from '../types.js';
 
-function node(id: string, fieldValues: WorkflowNode['fieldValues'] = {}): OperationNode {
-  return { id, kind: 'operation', operationId: id, requestMode: 'form', credentialId: null, fieldValues };
+function node(id: string): OperationNode {
+  return { id, kind: 'operation', operationId: id, credentialId: null };
 }
 
 describe('computeAncestors', () => {
@@ -20,16 +20,22 @@ describe('computeAncestors', () => {
     expect(computeAncestors([a, b, c], connections, 'c')).toEqual(new Set(['a', 'b']));
   });
 
-  it('treats a mapped field as an implied connection even with no explicit edge drawn', () => {
-    const a = node('a');
-    const b = node('b', { x: { source: 'mapped', fromNodeId: 'a', fromResponseFieldPath: 'id' } });
-
-    expect(computeAncestors([a, b], [], 'b')).toEqual(new Set(['a']));
-  });
-
-  it('returns an empty set for a node with no connections or mappings pointing to it', () => {
+  it('returns an empty set for a node with no connections pointing to it', () => {
     const a = node('a');
     const b = node('b');
+
+    expect(computeAncestors([a, b], [], 'b')).toEqual(new Set());
+  });
+
+  it("does not imply an edge from a Raw JSON section's own tag chip mapping — unlike the old per-leaf fieldValues, a tag chip can only ever pick a source already offered by this same graph, so it never needs to contribute one of its own", () => {
+    const a = node('a');
+    const b: WorkflowNode = {
+      ...node('b'),
+      rawBody: {
+        template: '{"id":"{{enlace:tag1}}"}',
+        tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: 'a', jsonPath: 'id' } },
+      },
+    };
 
     expect(computeAncestors([a, b], [], 'b')).toEqual(new Set());
   });
@@ -65,7 +71,6 @@ describe('computeAncestors', () => {
       id: 'g1',
       kind: 'presets',
       credentialId: null,
-      fieldValues: {},
       presets: [
         {
           id: 's1',

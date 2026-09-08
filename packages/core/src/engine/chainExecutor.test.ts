@@ -7,16 +7,17 @@ import {
   topologicalSort,
 } from './chainExecutor.js';
 import { __clearCredentialTokenCacheForTests, resolveCredentialInjection } from './credentials.js';
-import type { Credential, Operation, PresetsNode, RunControl, RunEvent, WorkflowConnection, WorkflowNode } from '../types.js';
+import type { Credential, Operation, OperationNode, PresetsNode, RunControl, RunEvent, WorkflowConnection, WorkflowNode } from '../types.js';
 import { buildRequest } from './handlers/index.js';
+import { rawFileTagFieldPath } from '../bodyTags.js';
 
 /** Flushes every currently-pending microtask (fetch mocks resolving, buildRequest's own promise chain, etc.) without advancing real time, so a paused/settled state has fully landed before assertions run. */
 function flushMicrotasks(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function node(id: string, fieldValues: WorkflowNode['fieldValues'] = {}): WorkflowNode {
-  return { id, kind: 'operation', operationId: id, requestMode: 'form', credentialId: null, fieldValues };
+function node(id: string): OperationNode {
+  return { id, kind: 'operation', operationId: id, credentialId: null };
 }
 
 /** A minimal Operation whose `id` and `path` are both derived from `id`, so `operationsById.get(id)` and the mocked fetch's URL both key off the same identifier. */
@@ -42,13 +43,20 @@ function mockResponse(status: number, body: unknown) {
 }
 
 describe('topologicalSort', () => {
-  it('orders a node after the node it maps a field from', () => {
+  // An explicit WorkflowConnection is the only thing that implies an
+  // ordering edge for a plain operation node now — a Raw JSON section's own
+  // tag-chip mapping deliberately contributes none (see dependencyGraph.ts's
+  // own doc: a tag can only ever pick a source already offered by this same
+  // graph, so its source is always already an explicit-connection ancestor
+  // by construction). credentialExtraParamOverrides and assert-preset
+  // checks are the two mechanisms that still imply an edge with no explicit
+  // connection drawn — see dependencyGraph.test.ts for that coverage.
+  it('orders a node after an explicit connection', () => {
     const a = node('a');
-    const b = node('b', {
-      'body.orderId': { source: 'mapped', fromNodeId: 'a', fromResponseFieldPath: 'id' },
-    });
+    const b = node('b');
+    const connections: WorkflowConnection[] = [{ fromNodeId: 'a', toNodeId: 'b' }];
 
-    expect(topologicalSort([b, a]).map((n) => n.id)).toEqual(['a', 'b']);
+    expect(topologicalSort([b, a], connections).map((n) => n.id)).toEqual(['a', 'b']);
   });
 
   it('leaves independent nodes in their original relative order', () => {
@@ -57,17 +65,10 @@ describe('topologicalSort', () => {
     expect(topologicalSort([a, b]).map((n) => n.id)).toEqual(['a', 'b']);
   });
 
-  it('throws CyclicWorkflowError on a cyclic mapping', () => {
-    const a = node('a', { x: { source: 'mapped', fromNodeId: 'b', fromResponseFieldPath: 'y' } });
-    const b = node('b', { y: { source: 'mapped', fromNodeId: 'a', fromResponseFieldPath: 'x' } });
-
-    expect(() => topologicalSort([a, b])).toThrow(CyclicWorkflowError);
-  });
-
-  it('orders via explicit connections even when a middle node carries no data (A -> B -> C, C maps from A)', () => {
+  it('orders via explicit connections even when a middle node carries no data (A -> B -> C)', () => {
     const a = node('a');
-    const b = node('b'); // no field mapping at all — pure sequencing
-    const c = node('c', { x: { source: 'mapped', fromNodeId: 'a', fromResponseFieldPath: 'id' } });
+    const b = node('b');
+    const c = node('c');
     const connections: WorkflowConnection[] = [
       { fromNodeId: 'a', toNodeId: 'b' },
       { fromNodeId: 'b', toNodeId: 'c' },
@@ -77,7 +78,7 @@ describe('topologicalSort', () => {
     expect(topologicalSort([c, a, b], connections).map((n) => n.id)).toEqual(['a', 'b', 'c']);
   });
 
-  it('throws CyclicWorkflowError on a cyclic explicit connection with no field mapping involved', () => {
+  it('throws CyclicWorkflowError on a cyclic explicit connection', () => {
     const a = node('a');
     const b = node('b');
     const connections: WorkflowConnection[] = [
@@ -92,15 +93,14 @@ describe('topologicalSort', () => {
 describe('computeExecutionLevels', () => {
   it('groups "run A, then B+C in parallel, then D (needs A and C, not B)"', () => {
     const a = node('a');
-    const b = node('b'); // connected after A, but no data dependency
+    const b = node('b'); // connected after A only
     const c = node('c'); // also connected after A only — same level as B
-    const d = node('d', {
-      x: { source: 'mapped', fromNodeId: 'a', fromResponseFieldPath: 'id' },
-      y: { source: 'mapped', fromNodeId: 'c', fromResponseFieldPath: 'id' },
-    });
+    const d = node('d'); // connected after both A and C — one level later
     const connections: WorkflowConnection[] = [
       { fromNodeId: 'a', toNodeId: 'b' },
       { fromNodeId: 'a', toNodeId: 'c' },
+      { fromNodeId: 'a', toNodeId: 'd' },
+      { fromNodeId: 'c', toNodeId: 'd' },
     ];
 
     const levels = computeExecutionLevels([a, b, c, d], connections);
@@ -143,25 +143,25 @@ describe('executeChain', () => {
     const n1: WorkflowNode = {
       id: 'n1',
       kind: 'operation',
-      requestMode: 'form',
       operationId: 'POST /orders',
       credentialId: null,
-      fieldValues: {
-        'body.item': { source: 'static', value: 'Widget' },
-        'header.x-trace-id': { source: 'static', value: 'abc123' },
-      },
+      rawBody: { template: '{"item":"Widget"}', tags: {} },
+      rawHeaders: { template: '{"x-trace-id":"abc123"}', tags: {} },
     };
     const n2: WorkflowNode = {
       id: 'n2',
       kind: 'operation',
-      requestMode: 'form',
       operationId: 'GET /orders/{id}',
       credentialId: null,
-      fieldValues: {
-        'path.id': { source: 'mapped', fromNodeId: 'n1', fromResponseFieldPath: 'id' },
+      rawPath: {
+        template: '{"id":"{{enlace:tag1}}"}',
+        tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: 'n1', jsonPath: 'id' } },
       },
     };
-    const workflow = { nodes: [n1, n2], connections: [] };
+    // A raw tag chip's source must already be an explicit-connection
+    // ancestor (see dependencyGraph.ts's own doc) — the mapping itself
+    // implies no ordering edge of its own any more.
+    const workflow = { nodes: [n1, n2], connections: [{ fromNodeId: 'n1', toNodeId: 'n2' }] };
 
     const operationsById = new Map([
       ['POST /orders', createOrder],
@@ -208,9 +208,9 @@ describe('executeChain', () => {
       responseSchema: null,
     };
 
-    const a: WorkflowNode = { id: 'a', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: null, fieldValues: {} };
-    const b: WorkflowNode = { id: 'b', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: null, fieldValues: {} };
-    const c: WorkflowNode = { id: 'c', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: null, fieldValues: {} };
+    const a: WorkflowNode = { id: 'a', kind: 'operation', operationId: 'GET /noop', credentialId: null };
+    const b: WorkflowNode = { id: 'b', kind: 'operation', operationId: 'GET /noop', credentialId: null };
+    const c: WorkflowNode = { id: 'c', kind: 'operation', operationId: 'GET /noop', credentialId: null };
     const connections: WorkflowConnection[] = [
       { fromNodeId: 'a', toNodeId: 'b' },
       { fromNodeId: 'a', toNodeId: 'c' },
@@ -241,7 +241,7 @@ describe('executeChain', () => {
       requestBodyContentType: null,
       responseSchema: null,
     };
-    const a: WorkflowNode = { id: 'a', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const a: WorkflowNode = { id: 'a', kind: 'operation', operationId: 'GET /noop', credentialId: 'cred-1' };
     const credentialsById = new Map<string, Credential>([
       ['cred-1', { id: 'cred-1', name: 'Test', type: 'bearer', token: 'secret-token' }],
     ]);
@@ -270,7 +270,7 @@ describe('executeChain', () => {
       requestBodyContentType: null,
       responseSchema: null,
     };
-    const a: WorkflowNode = { id: 'a', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const a: WorkflowNode = { id: 'a', kind: 'operation', operationId: 'GET /noop', credentialId: 'cred-1' };
     const credentialsById = new Map<string, Credential>([
       ['cred-1', { id: 'cred-1', name: 'Test', type: 'basic', username: 'alice', password: 'hunter2' }],
     ]);
@@ -299,7 +299,7 @@ describe('executeChain', () => {
       requestBodyContentType: null,
       responseSchema: null,
     };
-    const a: WorkflowNode = { id: 'a', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const a: WorkflowNode = { id: 'a', kind: 'operation', operationId: 'GET /noop', credentialId: 'cred-1' };
     const credentialsById = new Map<string, Credential>([
       ['cred-1', { id: 'cred-1', name: 'Test', type: 'apiKey', paramName: 'apiKey', in: 'query', key: 'secret-key' }],
     ]);
@@ -328,7 +328,7 @@ describe('executeChain', () => {
       requestBodyContentType: null,
       responseSchema: null,
     };
-    const a: WorkflowNode = { id: 'a', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const a: WorkflowNode = { id: 'a', kind: 'operation', operationId: 'GET /noop', credentialId: 'cred-1' };
     const credentialsById = new Map<string, Credential>([
       [
         'cred-1',
@@ -361,7 +361,7 @@ describe('executeChain', () => {
       requestBodyContentType: null,
       responseSchema: null,
     };
-    const a: WorkflowNode = { id: 'a', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: null, fieldValues: {} };
+    const a: WorkflowNode = { id: 'a', kind: 'operation', operationId: 'GET /noop', credentialId: null };
 
     await executeChain(
       { nodes: [a], connections: [] },
@@ -396,7 +396,7 @@ describe('executeChain', () => {
       requestBodyContentType: null,
       responseSchema: null,
     };
-    const a: WorkflowNode = { id: 'a', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const a: WorkflowNode = { id: 'a', kind: 'operation', operationId: 'GET /noop', credentialId: 'cred-1' };
     const credentialsById = new Map<string, Credential>([['cred-1', { id: 'cred-1', name: 'Test', type: 'bearer', token: 'secret' }]]);
 
     await executeChain(
@@ -428,7 +428,7 @@ describe('executeChain', () => {
       requestBodyContentType: null,
       responseSchema: null,
     };
-    const a: WorkflowNode = { id: 'a', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const a: WorkflowNode = { id: 'a', kind: 'operation', operationId: 'GET /noop', credentialId: 'cred-1' };
     const credentialsById = new Map<string, Credential>([
       [
         'cred-1',
@@ -475,8 +475,8 @@ describe('executeChain', () => {
     };
     // Two independent nodes (no connection between them, same level) sharing
     // one credential — the token endpoint should be hit once, not twice.
-    const a: WorkflowNode = { id: 'a', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
-    const b: WorkflowNode = { id: 'b', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const a: WorkflowNode = { id: 'a', kind: 'operation', operationId: 'GET /noop', credentialId: 'cred-1' };
+    const b: WorkflowNode = { id: 'b', kind: 'operation', operationId: 'GET /noop', credentialId: 'cred-1' };
     const credentialsById = new Map<string, Credential>([
       [
         'cred-1',
@@ -541,14 +541,12 @@ describe('executeChain', () => {
     };
     // No explicit connection from tenant -> b — the mapped override alone
     // must be enough to order b after tenant.
-    const tenant: WorkflowNode = { id: 'tenant', kind: 'operation', requestMode: 'form', operationId: 'GET /tenant', credentialId: null, fieldValues: {} };
+    const tenant: WorkflowNode = { id: 'tenant', kind: 'operation', operationId: 'GET /tenant', credentialId: null };
     const b: WorkflowNode = {
       id: 'b',
       kind: 'operation',
-      requestMode: 'form',
       operationId: 'GET /noop',
       credentialId: 'cred-1',
-      fieldValues: {},
       credentialExtraParamOverridesEnabled: true,
       credentialExtraParamOverrides: {
         audience: { source: 'mapped', fromNodeId: 'tenant', fromResponseFieldPath: 'audience' },
@@ -614,14 +612,12 @@ describe('executeChain', () => {
     // row added (mapped from `b`, so no cycle) but no response field chosen
     // yet ('' — the UI's "Select field..." state). Both must resolve to
     // the *same*, cached token.
-    const b: WorkflowNode = { id: 'b', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const b: WorkflowNode = { id: 'b', kind: 'operation', operationId: 'GET /noop', credentialId: 'cred-1' };
     const a: WorkflowNode = {
       id: 'a',
       kind: 'operation',
-      requestMode: 'form',
       operationId: 'GET /noop',
       credentialId: 'cred-1',
-      fieldValues: {},
       credentialExtraParamOverridesEnabled: true,
       credentialExtraParamOverrides: {
         audience: { source: 'mapped', fromNodeId: 'b', fromResponseFieldPath: '' },
@@ -693,17 +689,15 @@ describe('executeChain', () => {
       requestBodyContentType: null,
       responseSchema: null,
     };
-    const tenant: WorkflowNode = { id: 'tenant', kind: 'operation', requestMode: 'form', operationId: 'GET /tenant', credentialId: null, fieldValues: {} };
+    const tenant: WorkflowNode = { id: 'tenant', kind: 'operation', operationId: 'GET /tenant', credentialId: null };
     // Same fully-resolvable mapped override as the enabled-case test above,
     // but with the toggle left off (undefined) — a leftover/previously
     // configured override must stay completely inert.
     const b: WorkflowNode = {
       id: 'b',
       kind: 'operation',
-      requestMode: 'form',
       operationId: 'GET /noop',
       credentialId: 'cred-1',
-      fieldValues: {},
       credentialExtraParamOverrides: {
         audience: { source: 'mapped', fromNodeId: 'tenant', fromResponseFieldPath: 'audience' },
       },
@@ -755,7 +749,7 @@ describe('executeChain', () => {
       requestBodyContentType: null,
       responseSchema: null,
     };
-    const a: WorkflowNode = { id: 'a', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const a: WorkflowNode = { id: 'a', kind: 'operation', operationId: 'GET /noop', credentialId: 'cred-1' };
     const credentialsById = new Map<string, Credential>([
       [
         'cred-1',
@@ -782,14 +776,7 @@ describe('executeChain', () => {
     expect(result.steps[0].error).toMatch(/token request.*failed with status 401/);
   });
 
-  it('resolves a tag chip embedded in an ordinary Form-mode static field, even with requestMode back to "form"', async () => {
-    // Reproduces a real reported scenario: insert a tag chip in Raw JSON
-    // mode (whole-match), then type extra text right before it ("str"),
-    // making it embedded — then switch to Form anyway despite the "may
-    // lose custom JSON structure" warning. The resulting static field
-    // holds the literal "str{{enlace:tag1}}" text; it must still resolve
-    // at request time using the tag config `rawBody` still carries, not
-    // get sent to the target API unresolved.
+  it('resolves a tag chip embedded in a larger raw body string, not just a whole-match one', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(mockResponse(201, { id: 'cust-1' }))
@@ -818,18 +805,15 @@ describe('executeChain', () => {
     const a: WorkflowNode = {
       id: 'a',
       kind: 'operation',
-      requestMode: 'form',
       operationId: 'POST /customers',
       credentialId: null,
-      fieldValues: { 'body.name': { source: 'static', value: 'Ada' } },
+      rawBody: { template: '{"name":"Ada"}', tags: {} },
     };
     const b: WorkflowNode = {
       id: 'b',
       kind: 'operation',
       operationId: 'POST /orders',
       credentialId: null,
-      requestMode: 'form',
-      fieldValues: { 'body.note': { source: 'static', value: 'str{{enlace:tag1}}' } },
       rawBody: {
         template: '{"note":"str{{enlace:tag1}}"}',
         tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: 'a', jsonPath: 'id' } },
@@ -851,7 +835,7 @@ describe('executeChain', () => {
     expect(JSON.parse(orderInit.body)).toEqual({ note: 'strcust-1' });
   });
 
-  it('substitutes path and query from rawPath/rawQuery when requestMode is raw', async () => {
+  it('substitutes path and query from rawPath/rawQuery', async () => {
     const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, { ok: true }));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -873,13 +857,6 @@ describe('executeChain', () => {
       kind: 'operation',
       operationId: 'PATCH /customers/{id}',
       credentialId: null,
-      requestMode: 'raw',
-      fieldValues: {
-        // Stale form values must be ignored in raw mode.
-        'path.id': { source: 'static', value: 'stale' },
-        'query.dryRun': { source: 'static', value: false },
-        'body.name': { source: 'static', value: 'stale' },
-      },
       rawPath: { template: JSON.stringify({ id: 'cust-9' }), tags: {} },
       rawQuery: { template: JSON.stringify({ dryRun: true }), tags: {} },
       rawBody: { template: JSON.stringify({ name: 'Ada' }), tags: {} },
@@ -1055,20 +1032,20 @@ describe('executeChain — breakpoints, pause/continue/step/stop', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("never gates on a mapping-only edge — arming a key with no matching WorkflowConnection has no effect", async () => {
+  it("never gates a node with no matching WorkflowConnection — arming a key for two otherwise-unrelated nodes has no effect", async () => {
     const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {}));
     vi.stubGlobal('fetch', fetchMock);
 
     const a = node('a');
-    const b = node('b', { x: { source: 'mapped', fromNodeId: 'a', fromResponseFieldPath: 'id' } });
+    const b = node('b');
     const operationsById = new Map([
       ['a', op('a', '/a')],
       ['b', op('b', '/b')],
     ]);
 
-    // a->b is a real dependency (via the mapped field) but never an
-    // explicit WorkflowConnection, so this key can never match anything —
-    // b should run straight through, never pausing.
+    // No connection (or any other dependency) between a and b at all, so
+    // this armed key can never match anything — both run straight
+    // through, neither ever pausing.
     const result = await executeChain({ nodes: [a, b], connections: [] }, operationsById, new Map(), {
       baseUrl: 'http://example.test',
       armedBreakpoints: new Set([connectionKey('a', 'b')]),
@@ -1082,9 +1059,13 @@ describe('executeChain — breakpoints, pause/continue/step/stop', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const a = node('a');
-    const b = node('b', {
-      'body.orderId': { source: 'mapped', fromNodeId: 'a', fromResponseFieldPath: 'id' },
-    });
+    const b: WorkflowNode = {
+      ...node('b'),
+      rawBody: {
+        template: '{"orderId":"{{enlace:tag1}}"}',
+        tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: 'a', jsonPath: 'id' } },
+      },
+    };
     const connections: WorkflowConnection[] = [{ fromNodeId: 'a', toNodeId: 'b' }];
     const operationsById = new Map([
       ['a', op('a', '/a')],
@@ -1237,13 +1218,11 @@ describe('executeChain — breakpoints, pause/continue/step/stop', () => {
     const n: WorkflowNode = {
       id: 'n1',
       kind: 'operation',
-      requestMode: 'form',
       operationId: 'POST /products',
       credentialId: null,
-      fieldValues: {
-        'body.name': { source: 'static', value: 'Gadget' },
-        'body.price': { source: 'static', value: 19.5 },
-        'body.image': { source: 'file', fileName: 'gadget.png' },
+      rawBody: {
+        template: '{"name":"Gadget","price":19.5,"image":"{{enlace:tag1}}"}',
+        tags: { tag1: { id: 'tag1', type: 'uploaded_file', fileName: 'gadget.png' } },
       },
     };
 
@@ -1254,7 +1233,7 @@ describe('executeChain — breakpoints, pause/continue/step/stop', () => {
       new Map(),
       'http://example.test',
       undefined,
-      { 'n1::body.image': file }
+      { [`n1::${rawFileTagFieldPath('tag1')}`]: file }
     );
     expect(request.headers['Content-Type']).toBeUndefined();
     expect(request.body).toBeInstanceOf(FormData);
@@ -1263,22 +1242,9 @@ describe('executeChain — breakpoints, pause/continue/step/stop', () => {
     expect((form.get('image') as File).name).toBe('gadget.png');
     expect(form.get('name')).toBe('Gadget');
     expect(form.get('price')).toBe('19.5');
-
-    const result = await executeChain(
-      { nodes: [n], connections: [] },
-      new Map([[productOp.id, productOp]]),
-      new Map(),
-      { baseUrl: 'http://example.test', uploadedFiles: { 'n1::body.image': file } }
-    );
-
-    expect(fetchMock).toHaveBeenCalledOnce();
-    const [, init] = fetchMock.mock.calls[0];
-    expect(init.body).toBeInstanceOf(FormData);
-    expect(init.headers['Content-Type']).toBeUndefined();
-    expect(result.steps[0].response?.status).toBe(201);
   });
 
-  it('builds FormData for a multipart op in Raw mode too, including an uploaded_file tag', async () => {
+  it('sends multipart FormData all the way through executeChain\'s own fetch() call', async () => {
     const fetchMock = vi.fn().mockResolvedValue(mockResponse(201, { id: 'p1', name: 'Gadget', imageLocation: '/tmp/x' }));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -1302,10 +1268,8 @@ describe('executeChain — breakpoints, pause/continue/step/stop', () => {
     const n: WorkflowNode = {
       id: 'n1',
       kind: 'operation',
-      requestMode: 'raw', // no longer forced to 'form' just because the op is multipart
       operationId: 'POST /products',
       credentialId: null,
-      fieldValues: {},
       rawBody: {
         template: '{"name":"Gadget","price":19.5,"image":"{{enlace:tag1}}"}',
         tags: { tag1: { id: 'tag1', type: 'uploaded_file', fileName: 'gadget.png' } },
@@ -1314,31 +1278,22 @@ describe('executeChain — breakpoints, pause/continue/step/stop', () => {
 
     // Keyed via rawFileTagFieldPath, not a real field path — see
     // bodyTags.ts and operationNodeHandler.ts's own comment on why.
-    const request = await buildRequest(n, productOp, new Map(), new Map(), 'http://example.test', undefined, {
-      'n1::body:tag:tag1': file,
-    });
-    expect(request.headers['Content-Type']).toBeUndefined();
-    expect(request.body).toBeInstanceOf(FormData);
-    const form = request.body as FormData;
-    expect(form.get('image')).toBeInstanceOf(File);
-    expect((form.get('image') as File).name).toBe('gadget.png');
-    expect(form.get('name')).toBe('Gadget');
-    expect(form.get('price')).toBe('19.5');
-
     const result = await executeChain(
       { nodes: [n], connections: [] },
       new Map([[productOp.id, productOp]]),
       new Map(),
-      { baseUrl: 'http://example.test', uploadedFiles: { 'n1::body:tag:tag1': file } }
+      { baseUrl: 'http://example.test', uploadedFiles: { [`n1::${rawFileTagFieldPath('tag1')}`]: file } }
     );
 
     expect(fetchMock).toHaveBeenCalledOnce();
     const [, init] = fetchMock.mock.calls[0];
+    expect(init.headers['Content-Type']).toBeUndefined();
     expect(init.body).toBeInstanceOf(FormData);
+    expect((init.body as FormData).get('image')).toBeInstanceOf(File);
     expect(result.steps[0].response?.status).toBe(201);
   });
 
-  it('fails clearly when a raw uploaded_file tag has no in-memory File blob', async () => {
+  it('fails clearly when an uploaded_file tag has no in-memory File blob', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 
@@ -1354,10 +1309,8 @@ describe('executeChain — breakpoints, pause/continue/step/stop', () => {
     const n: WorkflowNode = {
       id: 'n1',
       kind: 'operation',
-      requestMode: 'raw',
       operationId: 'POST /products',
       credentialId: null,
-      fieldValues: {},
       rawBody: {
         template: '{"image":"{{enlace:tag1}}"}',
         tags: { tag1: { id: 'tag1', type: 'uploaded_file', fileName: 'gone.png' } },
@@ -1374,46 +1327,10 @@ describe('executeChain — breakpoints, pause/continue/step/stop', () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(result.steps[0].error).toMatch(/Re-select the file for "gone\.png"/);
   });
-
-  it('fails clearly when a file marker has no in-memory File blob', async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
-
-    const productOp: Operation = {
-      id: 'POST /products',
-      method: 'post',
-      path: '/products',
-      parameters: [],
-      requestBodySchema: {
-        type: 'object',
-        properties: { image: { type: 'string', format: 'binary' } },
-      },
-      requestBodyContentType: 'multipart/form-data',
-      responseSchema: null,
-    };
-    const n: WorkflowNode = {
-      id: 'n1',
-      kind: 'operation',
-      requestMode: 'form',
-      operationId: 'POST /products',
-      credentialId: null,
-      fieldValues: { 'body.image': { source: 'file', fileName: 'gone.png' } },
-    };
-
-    const result = await executeChain(
-      { nodes: [n], connections: [] },
-      new Map([[productOp.id, productOp]]),
-      new Map(),
-      { baseUrl: 'http://example.test' }
-    );
-
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(result.steps[0].error).toMatch(/Re-select the file for "body\.image"/);
-  });
 });
 
 function presetsNode(id: string, presets: PresetsNode['presets']): PresetsNode {
-  return { id, kind: 'presets', credentialId: null, fieldValues: {}, presets };
+  return { id, kind: 'presets', credentialId: null, presets };
 }
 
 describe('executeChain — presets nodes', () => {
@@ -1473,10 +1390,12 @@ describe('executeChain — presets nodes', () => {
     const a: WorkflowNode = {
       id: 'a',
       kind: 'operation',
-      requestMode: 'form',
       operationId: 'a',
       credentialId: null,
-      fieldValues: { 'query.x': { source: 'mapped', fromNodeId: 'g', fromResponseFieldPath: 'id' } },
+      rawQuery: {
+        template: '{"x":"{{enlace:tag1}}"}',
+        tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: 'g', jsonPath: 'id' } },
+      },
     };
     const connections: WorkflowConnection[] = [{ fromNodeId: 'g', toNodeId: 'a' }];
     const operationsById = new Map([['a', op('a', '/a')]]);
@@ -1485,9 +1404,13 @@ describe('executeChain — presets nodes', () => {
       baseUrl: 'http://example.test',
     });
 
+    // Unlike the old Form-mode mapping (which just silently resolved to
+    // `undefined` and dropped the query param), a Raw JSON tag chip throws
+    // a clear error instead — same "never silently sends a placeholder"
+    // rule resolveTagValue (bodyTags.ts) applies everywhere else.
     const aStep = result.steps.find((s) => s.nodeId === 'a')!;
-    expect(aStep.error).toBeUndefined();
-    expect(new URL(fetchMock.mock.calls[0][0] as string).searchParams.get('x')).toBeNull();
+    expect(aStep.error).toMatch(/no captured response yet/);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('Stop mid-collection resolves promptly (the in-progress preset is cut short, and no further preset starts)', async () => {
