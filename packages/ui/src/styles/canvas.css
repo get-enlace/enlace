@@ -145,7 +145,15 @@
      rather than vanish, same as it already does behind a presets-node card. */
   background: var(--color-node-bg);
   min-width: 180px;
-  max-width: 280px;
+  /* Matches NODE_CARD_SIZE.width (nodePlacement.ts) exactly — group-frame
+     geometry (groupGeometry.ts's memberBounds/expandedGroupFrame) assumes
+     every card is that fixed size, since positions are all this app tracks
+     (no per-node measured width/height anywhere); a card actually wider
+     than that assumption pokes out past its group's right edge, which the
+     unbroken text in a very long request path used to do (max-width was
+     280 here) before .workflow-node__path picked up its own ellipsis
+     below. Keep the two in sync if either changes. */
+  max-width: 240px;
   font-size: 13px;
 }
 
@@ -320,12 +328,26 @@
   padding-right: 22px;
 }
 
+/* Single line + ellipsis, not wrapped — same treatment the collapsed
+   group row's own path already gets (.node-group__member-path below). A
+   long path left free to wrap wraps *tall* instead (unbounded — unlike
+   the summary's clamped-at-2-lines case just below, there was no cap at
+   all), pushing the card past the group-frame geometry's fixed-height
+   assumption the same way max-width above guards its fixed-width one;
+   rely on the title attr (see WorkflowNodeCard.tsx) for the full text.
+   `min-width: 0` overrides a flex item's default `min-width: auto`,
+   which would otherwise refuse to shrink below the text's full length and
+   defeat the ellipsis entirely. */
 .workflow-node__path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 600;
   color: var(--color-text);
-  overflow-wrap: anywhere;
 }
 
 /* Long OpenAPI descriptions would otherwise stretch the node to fit a
