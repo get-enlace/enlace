@@ -1,6 +1,5 @@
 import { coerceStaticValue } from '../../utils/coerceValue.js';
 import { areFieldTypesCompatible, flattenResponseFields, type SchemaField } from '../../utils/flattenSchema.js';
-import { guessRandomExpression } from '../../utils/randomFill.js';
 import { operationIdOf } from '../../utils/workflowNode.js';
 import { TrashIcon, UploadIcon } from '../chromeIcons.js';
 import type { FieldValue, Operation, WorkflowNode } from '../../types.js';
@@ -113,7 +112,12 @@ export function RequestField({
             if (e.target.value === 'static') {
               onChange({ source: 'static', value: '' });
             } else if (e.target.value === 'random') {
-              onChange({ source: 'random', expression: guessRandomExpression(field) });
+              // No pre-filled guess — we don't suggest a method here at
+              // all (a name/type-based guess was wrong often enough on
+              // real schemas to be worse than starting blank); the user
+              // types the expression themselves, with the `$rand.`
+              // datalist below to discover method names.
+              onChange({ source: 'random', expression: '' });
             } else if (ancestorNodes[0]) {
               onChange({ source: 'mapped', fromNodeId: ancestorNodes[0].id, fromResponseFieldPath: '' });
             }

@@ -77,45 +77,42 @@ export function buildSchemaExample(schema: Schema | null | undefined): unknown {
 }
 
 /**
- * Same recursive walk as `buildSchemaExample`, but every scalar leaf is
- * produced by `guessLeaf` (a `$rand.<method>()` expression — see
- * randomFill.ts's `fillRawBodyWithRandomData`, the only caller) instead of
- * a placeholder value, and *every* property is filled in, required or not
- * — the whole point of a "fill with random data" action is a fully
- * populated, ready-to-run body, not a "fill this in" skeleton, so there's
- * no reason to null out optional fields here the way `buildSchemaExample`
- * does. `guessLeaf` only ever sees the non-enum, non-file case: an enum
- * leaf gets one of its own declared values instead (Chance has no notion
- * of an API-specific enum), and a `format: 'binary'` leaf (file upload) is
- * left blank — same as Form mode's `fillBodyWithRandomData`, which skips
- * file fields entirely since there's no file to attach from a bulk-fill
- * action.
+ * Same recursive walk as `buildSchemaExample`, but every *required* scalar
+ * leaf is produced by `guessLeaf` — a real, concretely-typed generated
+ * value (see randomFill.ts's `fillRawBodyWithRandomData`, the only caller)
+ * — instead of a placeholder. Optional properties are left `null`, same
+ * required-check and same "no `required` array at all means fill
+ * everything" edge case as `buildSchemaExample` above: a bulk "fill with
+ * random data" action is meant to produce a plausible, ready-to-run body,
+ * not one padded out with guesses for fields the caller never asked for.
+ * `guessLeaf` only ever sees the non-enum, non-file case: an enum leaf
+ * gets one of its own declared values instead (Chance has no notion of an
+ * API-specific enum), and a `format: 'binary'` leaf (file upload) is left
+ * blank — same as Form mode's `fillBodyWithRandomData`, which skips file
+ * fields entirely since there's no file to attach from a bulk-fill action.
  */
-export function buildRandomSchemaExample(
-  schema: Schema | null | undefined,
-  guessLeaf: (name: string | undefined, schema: Schema) => string,
-  name?: string
-): unknown {
+export function buildRandomSchemaExample(schema: Schema | null | undefined, guessLeaf: (schema: Schema) => unknown): unknown {
   if (!schema) return null;
 
-  if (schema.allOf?.length) return buildRandomSchemaExample(mergeAllOf(schema.allOf), guessLeaf, name);
+  if (schema.allOf?.length) return buildRandomSchemaExample(mergeAllOf(schema.allOf), guessLeaf);
 
   const branch = firstBranch(schema);
-  if (branch) return buildRandomSchemaExample(branch, guessLeaf, name);
+  if (branch) return buildRandomSchemaExample(branch, guessLeaf);
 
   if (isArraySchema(schema)) return [buildRandomSchemaExample(schema.items, guessLeaf)];
 
   if (isObjectSchema(schema)) {
     const example: Record<string, unknown> = {};
+    const required: string[] | undefined = schema.required;
     for (const [propName, propSchema] of Object.entries<Schema>(schema.properties ?? {})) {
-      example[propName] = buildRandomSchemaExample(propSchema, guessLeaf, propName);
+      example[propName] = !required || required.includes(propName) ? buildRandomSchemaExample(propSchema, guessLeaf) : null;
     }
     return example;
   }
 
   if (schema.format === 'binary') return '';
   if (schema.enum?.length) return schema.enum[Math.floor(Math.random() * schema.enum.length)];
-  return guessLeaf(name, schema);
+  return guessLeaf(schema);
 }
 
 /**

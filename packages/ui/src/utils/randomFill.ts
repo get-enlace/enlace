@@ -1,38 +1,14 @@
+import { resolveRandomExpressionsInValue } from '@get-enlace/core';
 import type { Operation, FieldValue, RawBody } from '../types.js';
-import { flattenRequestFields, type SchemaField } from './flattenSchema.js';
+import { flattenRequestFields } from './flattenSchema.js';
 import { buildRandomSchemaExample } from './schemaExample.js';
 
 /**
- * Field-name/type heuristics -> a Chance method to pre-fill a `source:
- * 'random'` field with, expressed as the literal `$rand.<method>()` a user
- * would otherwise have typed by hand. Deliberately not exhaustive or
- * clever — a wrong (or missing) guess costs the user one edit, same as
- * picking "Random" from the source select and typing the expression
- * themselves; this exists purely to make the common case (a field
- * literally named `firstName`, `email`, …) need zero typing.
+ * A Chance method name guessed purely from a field's type/format — no
+ * name-based heuristic (deliberately removed: matching a field's *name*
+ * to a generator, e.g. `email` -> `email()`, was wrong often enough on
+ * real-world schemas to be worse than a plain type-shaped fallback).
  */
-const NAME_HEURISTICS: [RegExp, string][] = [
-  [/(^|_)id$/, 'guid()'],
-  [/(first.?name|given.?name)/, 'first()'],
-  [/(last.?name|surname|family.?name)/, 'last()'],
-  [/(full.?name|display.?name)|^name$/, 'name()'],
-  [/email/, 'email()'],
-  [/(phone|mobile)/, 'phone()'],
-  [/(zip|postal)/, 'zip()'],
-  [/city/, 'city()'],
-  [/country/, 'country()'],
-  [/address/, 'address()'],
-  [/(url|website)/, 'url()'],
-  [/age/, 'age()'],
-  [/company/, 'company()'],
-];
-
-/** Last path segment, e.g. "body.customer.firstName" -> "firstname" (array indices stripped the same way). */
-function normalizedFieldName(name: string): string {
-  const segment = name.split(/[.[]/).pop() ?? name;
-  return segment.replace(/\]$/, '').toLowerCase();
-}
-
 function guessByType(schema: { type?: string; format?: string }): string {
   if (schema.format === 'date' || schema.format === 'date-time') return 'date()';
   if (schema.format === 'uuid') return 'guid()';
@@ -51,35 +27,40 @@ function guessByType(schema: { type?: string; format?: string }): string {
 }
 
 /**
- * A Chance method name, guessed from a field's own name first (`email` ->
- * `email()`), falling back to its type/format when nothing matches.
- * Shared by both a Form field's guess (`guessRandomExpression`, below) and
- * Raw mode's whole-body fill (`fillRawBodyWithRandomData`) — the two need
- * the exact same heuristic, just applied to a `SchemaField` in one case and
- * a raw JSON-schema property in the other, so this takes only the bit both
- * shapes actually have: a name and a type/format.
+ * One concrete, correctly-typed value for a schema — resolved through
+ * Chance right now (via @get-enlace/core's own resolver, rather than
+ * reaching for `chance` directly, which this package doesn't depend on)
+ * so the *real* generated type comes back untouched: an actual `boolean`
+ * for `bool()`, an actual `number` for `integer()`/`floating()`, never
+ * stringified. `date()` is the one method whose native Chance return type
+ * (a JS `Date`) isn't itself the right static value — OpenAPI's
+ * `date`/`date-time` formats are strings, and a raw `Date` would render as
+ * its verbose `toString()` in a static text field — so that one case gets
+ * converted to the ISO shape the schema actually asked for.
  */
-function guessMethod(name: string, schema: { type?: string; format?: string }): string {
-  const key = normalizedFieldName(name);
-  const hit = NAME_HEURISTICS.find(([pattern]) => pattern.test(key));
-  return hit ? hit[1] : guessByType(schema);
+function generateRandomValue(schema: { type?: string; format?: string }): unknown {
+  const value = resolveRandomExpressionsInValue(`$rand.${guessByType(schema)}`);
+  if (value instanceof Date) return schema.format === 'date' ? value.toISOString().slice(0, 10) : value.toISOString();
+  return value;
 }
 
-/** The `$rand.<method>()` expression a "Random" field starts out with — either a name-based guess, or a type-based fallback when nothing matches. Always a real, callable Chance method (no args pre-filled — see RANDOM_METHOD_ARG_HINTS in @get-enlace/core for the editor's own snippet hints, not used here). */
-export function guessRandomExpression(field: SchemaField): string {
-  const name = field.path.split(/[.[]/).pop() ?? field.path;
-  return `$rand.${guessMethod(name, field)}`;
+/** A field/schema's fill-in value for the dice-icon bulk fill: one of its own declared enum values when it has one (Chance has no notion of an API-specific enum), otherwise a generated value via `generateRandomValue`. */
+function generateFieldValue(schema: { type?: string; format?: string; enum?: unknown[] }): unknown {
+  if (schema.enum?.length) return schema.enum[Math.floor(Math.random() * schema.enum.length)];
+  return generateRandomValue(schema);
 }
 
 /**
- * One-shot "fill the whole body with random data" — every supported body
- * leaf becomes a `source: 'random'` field seeded with a guessed
- * expression, fully editable afterward same as if the user had picked
- * "Random" from that field's own source select. `onlyEmpty` limits this to
- * leaves that don't already have a field value at all (or are `static`
- * with an empty/undefined value), so re-running the action doesn't clobber
- * fields the user already set deliberately (mapped, attached files, or a
- * static value they typed).
+ * One-shot "fill the whole body with random data" — every supported,
+ * *required* body leaf becomes a `source: 'static'` field seeded with a
+ * concrete generated value, fully editable afterward same as any other
+ * static field; an optional leaf is left `null` rather than guessed, since
+ * an unopinionated bulk fill has no business deciding a field the caller
+ * didn't ask for should be sent at all. `onlyEmpty` limits this to leaves
+ * that don't already have a field value at all (or are `static` with an
+ * empty/undefined value), so re-running the action doesn't clobber fields
+ * the user already set deliberately (mapped, attached files, or a static
+ * value they typed).
  */
 export function fillBodyWithRandomData(
   operation: Operation,
@@ -100,7 +81,7 @@ export function fillBodyWithRandomData(
     const isEmpty = !existing || (existing.source === 'static' && (existing.value === '' || existing.value === undefined));
     if (onlyEmpty && !isEmpty) continue;
 
-    out[field.path] = { source: 'random', expression: guessRandomExpression(field) };
+    out[field.path] = { source: 'static', value: field.required ? generateFieldValue(field) : null };
   }
   return out;
 }
@@ -110,14 +91,15 @@ export function fillBodyWithRandomData(
  * with random data" action, but Raw mode has no flat field list to iterate
  * (its whole point is representing shapes the form can't), so this walks
  * the schema directly via `buildRandomSchemaExample` instead, guessing
- * each scalar leaf with the exact same name/type heuristic Form mode uses.
+ * each required scalar leaf with the exact same type heuristic Form mode
+ * uses (optional leaves come back `null` — see that function's own doc).
  * Full overwrite, same "overwrites whatever's already there" contract as
  * the Form-mode button — any existing tag chips (mapped fields, uploaded
  * files) are discarded along with the rest of the old template, so the
  * result carries no tags of its own.
  */
 export function fillRawBodyWithRandomData(operation: Operation): RawBody {
-  const example = buildRandomSchemaExample(operation.requestBodySchema, (name, schema) => `$rand.${guessMethod(name ?? '', schema)}`);
+  const example = buildRandomSchemaExample(operation.requestBodySchema, generateRandomValue);
   const target = typeof example === 'object' && example !== null ? example : {};
   return { template: JSON.stringify(target, null, 2), tags: {} };
 }

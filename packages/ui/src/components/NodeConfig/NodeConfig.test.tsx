@@ -880,7 +880,7 @@ describe('NodeConfig', () => {
       expect(button).not.toHaveTextContent('Fill with random data');
     });
 
-    it('is also offered in Raw mode, and fully overwrites the raw body with guessed $rand expressions', async () => {
+    it('is also offered in Raw mode, and fully overwrites the raw body with real generated values for required fields, null for optional ones', async () => {
       useWorkflowStore.setState({
         nodes: [makeNode({ requestMode: 'raw', rawBody: { template: '{"name":"fido"}', tags: {} } })],
         selectedNodeId: 'node-1',
@@ -891,9 +891,14 @@ describe('NodeConfig', () => {
 
       const rawBody = asOperationNode(useWorkflowStore.getState().nodes[0]).rawBody!;
       const parsed = JSON.parse(rawBody.template);
-      expect(parsed.name).toBe('$rand.name()');
-      expect(parsed.qty).toBe('$rand.integer()');
-      expect(['available', 'pending', 'sold']).toContain(parsed.status);
+      // Only "name" is required on petOperation's schema (see its own
+      // definition above) — a real generated string, not a `$rand...`
+      // expression. Every optional property (qty, status, ...) is left
+      // null rather than guessed.
+      expect(typeof parsed.name).toBe('string');
+      expect(parsed.name).not.toMatch(/^\$rand\./);
+      expect(parsed.qty).toBeNull();
+      expect(parsed.status).toBeNull();
       expect(rawBody.tags).toEqual({});
     });
 

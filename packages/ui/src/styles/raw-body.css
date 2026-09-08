@@ -126,6 +126,46 @@
   border-radius: 3px;
 }
 
+.raw-body-editor__error {
+  color: var(--color-error);
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+
+/* Positioning context for the floating Beautify control below — docked to
+   the editor's own corner rather than laid out as a separate toolbar row. */
+.raw-body-editor__surface {
+  position: relative;
+}
+
+.raw-body-editor__beautify {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 5; /* above CodeMirror's own content/gutters, below the tag-config modal */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  color: var(--color-text-muted);
+  /* background: var(--color-panel-bg); */
+  cursor: pointer;
+}
+
+.raw-body-editor__beautify:hover:not(:disabled) {
+  color: var(--color-text);
+  background: var(--color-border);
+}
+
+.raw-body-editor__beautify:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .raw-body-editor__codemirror {
   border: 1px solid var(--color-border);
   border-radius: 4px;
@@ -156,6 +196,24 @@
   background: var(--color-topbar-bg);
   color: var(--color-text-muted);
   border-right: 1px solid var(--color-border);
+}
+
+.raw-body-editor__codemirror .cm-foldPlaceholder {
+  background: var(--color-topbar-bg);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+/* `$rand.<method>(...)` calls (randExpressionHighlightPlugin, RawBodyEditor.tsx)
+ * — italic and a color no other token in this editor uses (jsonHighlightStyle
+ * above already claims get/post/put/cookie for properties/strings/numbers-
+ * and-booleans/null), so a generator call reads as "resolves to something
+ * different every run" at a glance, distinct from an ordinary string value. */
+.cm-rand-expr {
+  font-style: italic;
+  color: var(--color-presets);
 }
 
 .tag-chip {

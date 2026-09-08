@@ -616,4 +616,80 @@ describe('RawBodyEditor', () => {
       expect(container.querySelector('.cm-content')?.textContent).toContain('widget');
     });
   });
+
+  describe('JSON linting', () => {
+    it('marks invalid JSON with a lint diagnostic', async () => {
+      // `jsonParseLinter` reports an unclosed object as a zero-width
+      // "point" diagnostic at the end of the doc (`.cm-lintPoint-error`)
+      // rather than a ranged one (`.cm-lintRange-error`, the other shape
+      // it can produce for e.g. a bad token) — either is "a diagnostic is
+      // showing", which is all this asserts.
+      const rawBody: RawBody = { template: '{"name":', tags: {} };
+      const { container } = render(
+        <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} />
+      );
+      await waitFor(
+        () => {
+          expect(container.querySelector('.cm-lintRange-error, .cm-lintPoint-error')).toBeTruthy();
+        },
+        { timeout: 2000 }
+      );
+    });
+
+    it('has no lint diagnostic for valid JSON', async () => {
+      const rawBody: RawBody = { template: '{"name":"widget"}', tags: {} };
+      const { container } = render(
+        <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} />
+      );
+      await waitFor(() => {
+        expect(container.querySelector('.cm-content')?.textContent).toContain('widget');
+      });
+      // Give the (debounced) linter a chance to run before asserting its absence.
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(container.querySelector('.cm-lintRange-error, .cm-lintPoint-error')).toBeNull();
+    });
+  });
+
+  describe('Beautify', () => {
+    it('reformats compact JSON to standard 2-space indentation', async () => {
+      function Harness() {
+        const [rawBody, setRawBody] = useState<RawBody>({ template: '{"name":"widget","qty":3}', tags: {} });
+        return <RawBodyEditor rawBody={rawBody} onChange={setRawBody} ancestorNodes={[]} nodeLabels={labelsFor([])} />;
+      }
+      const { container } = render(<Harness />);
+      await waitFor(() => {
+        expect(container.querySelector('.cm-content')?.textContent).toContain('widget');
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Beautify JSON' }));
+
+      // CodeMirror renders one `.cm-line` div per doc line — its own
+      // textContent never carries the newlines between them.
+      await waitFor(() => {
+        const lines = [...container.querySelectorAll('.cm-line')].map((el) => el.textContent);
+        expect(lines.join('\n')).toBe(JSON.stringify(JSON.parse('{"name":"widget","qty":3}'), null, 2));
+      });
+    });
+
+    it('shows an error and leaves the document untouched instead of throwing on invalid JSON', async () => {
+      const rawBody: RawBody = { template: '{"name":', tags: {} };
+      const { container } = render(
+        <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} />
+      );
+      await waitFor(() => {
+        expect(container.querySelector('.cm-content')).toBeTruthy();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Beautify JSON' }));
+
+      expect(await screen.findByText(/isn't valid JSON/)).toBeInTheDocument();
+      expect(container.querySelector('.cm-content')?.textContent).toBe('{"name":');
+    });
+
+    it('is disabled while the editor is read-only', async () => {
+      const rawBody: RawBody = { template: '{"name":"widget"}', tags: {} };
+      render(<RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} readOnly />);
+      expect(await screen.findByRole('button', { name: 'Beautify JSON' })).toBeDisabled();
+    });
+  });
 });
