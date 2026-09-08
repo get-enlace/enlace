@@ -8,10 +8,12 @@ import {
   type ViewUpdate,
   WidgetType,
   keymap,
+  lineNumbers,
   tooltips,
 } from '@codemirror/view';
-import { json } from '@codemirror/lang-json';
-import { HighlightStyle, syntaxHighlighting, syntaxTree } from '@codemirror/language';
+import { json, jsonParseLinter } from '@codemirror/lang-json';
+import { codeFolding, foldGutter, foldKeymap, HighlightStyle, syntaxHighlighting, syntaxTree } from '@codemirror/language';
+import { linter } from '@codemirror/lint';
 import { tags as t } from '@lezer/highlight';
 import {
   autocompletion,
@@ -21,9 +23,10 @@ import {
   type CompletionResult,
 } from '@codemirror/autocomplete';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
-import { listRandomMethodNames, makeTagPlaceholder, RANDOM_METHOD_ARG_HINTS, tagPattern } from '@get-enlace/core';
+import { listRandomMethodNames, makeTagPlaceholder, RANDOM_METHOD_ARG_HINTS, randomExprPattern, tagPattern } from '@get-enlace/core';
 import { randomId } from '../../utils/randomId.js';
 import type { BodyTag, BodyTagType, RawBody, WorkflowNode } from '../../types.js';
+import { BeautifyIcon } from '../chromeIcons.js';
 import { TagConfigModal } from './TagConfigModal.js';
 
 export interface RawBodyEditorProps {
@@ -295,6 +298,40 @@ function randCompletionSource(methodNames: string[]) {
 }
 
 /**
+ * Marks every `$rand.<method>(<args>)` call with a distinct italic style
+ * so it reads as "resolves to something different every run" instead of
+ * blending into ordinary string text. Purely visual — a `Decoration.mark`
+ * wraps the matched range without replacing it, unlike a tag chip's
+ * placeholder (`TagChipWidget` above), which *is* replaced with a widget;
+ * `$rand.` text stays live, selectable, editable document text throughout.
+ * Only ever installed when `allowRandom` is set (see `buildJsonAutocompleteExtensions`) —
+ * mirrors the completion source right above it, which is the same gate.
+ */
+function randExpressionHighlightPlugin() {
+  function build(view: EditorView): DecorationSet {
+    const text = view.state.doc.toString();
+    const ranges = [...text.matchAll(randomExprPattern())].map((match) => {
+      const from = match.index ?? 0;
+      return Decoration.mark({ class: 'cm-rand-expr' }).range(from, from + match[0].length);
+    });
+    return Decoration.set(ranges);
+  }
+
+  return ViewPlugin.fromClass(
+    class {
+      decorations: DecorationSet;
+      constructor(view: EditorView) {
+        this.decorations = build(view);
+      }
+      update(update: ViewUpdate) {
+        if (update.docChanged) this.decorations = build(update.view);
+      }
+    },
+    { decorations: (v) => v.decorations }
+  );
+}
+
+/**
  * The doc-shape-independent half of the editor's extensions — split out
  * from the component so a test can build a real `EditorView` against them
  * directly (see RawBodyEditor.test.tsx's tooltip-clipping regression
@@ -310,13 +347,31 @@ export function buildJsonAutocompleteExtensions(
     json(),
     syntaxHighlighting(jsonHighlightStyle),
     history(),
-    keymap.of([...defaultKeymap, ...historyKeymap]),
+    lineNumbers(),
+    // codeFolding() supplies the fold behavior itself (json()'s language
+    // data already knows how to find an object/array's foldable range);
+    // foldGutter() is just the clickable arrow that triggers it in the
+    // line-number gutter added above.
+    codeFolding(),
+    foldGutter(),
+    // Live JSON-syntax validation as you type — a red squiggle under the
+    // offending token plus a hover tooltip with the parser's own message,
+    // same mechanism the Beautify button's own "isn't valid JSON right
+    // now" banner catches at click time (that banner still exists
+    // separately, since a squiggle is easy to miss and Beautify needs to
+    // explain concretely why it did nothing). Shorter than the linter's
+    // own 750ms default debounce — this editor's docs are small enough
+    // that re-parsing on every pause is cheap, and feedback that lags
+    // visibly behind typing reads as broken rather than "not urgent".
+    linter(jsonParseLinter(), { delay: 300 }),
+    keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap]),
     autocompletion({
       override: [
         tagCompletionSource(onTriggerTag, allowFileUpload),
         ...(allowRandom ? [randCompletionSource(listRandomMethodNames())] : []),
       ],
     }),
+    ...(allowRandom ? [randExpressionHighlightPlugin()] : []),
     EditorView.lineWrapping,
     // CodeMirror defaults to its *light* base theme (caret-color: black)
     // unless told otherwise — our CSS paints this editor with a near-
@@ -417,6 +472,7 @@ export function RawBodyEditor({
 
   const [pendingInsert, setPendingInsert] = useState<{ type: BodyTagType; from: number; to: number } | null>(null);
   const [editingTagId, setEditingTagId] = useState<string | null>(null);
+  const [beautifyError, setBeautifyError] = useState<string | null>(null);
 
   const nodesById = new Map(ancestorNodes.map((n) => [n.id, n]));
 
@@ -599,6 +655,34 @@ export function RawBodyEditor({
     refocusEditor();
   }
 
+  /**
+   * Reformats the document to standard 2-space-indented JSON. A plain
+   * dispatch, not the `scripted`-annotated kind `handleInsertConfirm`/
+   * `handleDelete` use above — those need to hand the updateListener a
+   * combined {template, tags} it couldn't derive on its own (a tag was
+   * just inserted/removed); a reformat only ever rearranges whitespace
+   * around content that's already there (tag placeholders and `$rand.`
+   * calls are just string content to `JSON.parse`/`stringify`, unaffected
+   * either way), so the normal doc-changed path already does the right
+   * thing — recompute the template, keep every tag whose placeholder is
+   * still present, report it through `onChange`.
+   */
+  function handleBeautify() {
+    const view = viewRef.current;
+    if (!view) return;
+    const text = view.state.doc.toString();
+    let formatted: string;
+    try {
+      formatted = JSON.stringify(JSON.parse(text), null, 2);
+    } catch {
+      setBeautifyError("Can't beautify — this isn't valid JSON right now.");
+      return;
+    }
+    setBeautifyError(null);
+    if (formatted === text) return;
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: formatted } });
+  }
+
   const editingTag = editingTagId ? rawBody.tags[editingTagId] : undefined;
 
   return (
@@ -608,7 +692,25 @@ export function RawBodyEditor({
           Type <code>{'{{'}</code> inside a string to map a value from an upstream response.
         </div>
       )}
-      <div className={`raw-body-editor__codemirror${readOnly ? ' raw-body-editor__codemirror--readonly' : ''}`} ref={containerRef} />
+      {beautifyError && <div className="raw-body-editor__error">{beautifyError}</div>}
+      {/* Beautify lives as a floating control docked to the editor's own
+          top-right corner (not a separate toolbar row above it) — same
+          "attached to the surface it acts on" treatment CodeMirror's own
+          fold-gutter arrows get, rather than reading as a whole separate
+          piece of chrome. */}
+      <div className="raw-body-editor__surface">
+        <button
+          type="button"
+          className="raw-body-editor__beautify"
+          disabled={readOnly}
+          onClick={handleBeautify}
+          aria-label="Beautify JSON"
+          title="Beautify — reformat this JSON with standard indentation"
+        >
+          <BeautifyIcon />
+        </button>
+        <div className={`raw-body-editor__codemirror${readOnly ? ' raw-body-editor__codemirror--readonly' : ''}`} ref={containerRef} />
+      </div>
 
       {pendingInsert && (
         <TagConfigModal
