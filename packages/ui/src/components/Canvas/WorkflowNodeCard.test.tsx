@@ -87,6 +87,23 @@ describe('WorkflowNodeCard', () => {
     expect(screen.getByText('Add a new pet to the store.')).toBeInTheDocument();
   });
 
+  it('carries the full path in a title attribute, for when a long one is CSS-ellipsized', () => {
+    // Reproduces a reported bug: an unbounded path (styles/canvas.css used
+    // to let it wrap instead of clamping) could render taller/wider than
+    // the fixed size groupGeometry.ts's frame math assumes every card is,
+    // so a long-path card would poke out past its group's edge. The path
+    // is now single-line + ellipsis (see .workflow-node__path) — this just
+    // confirms the full text still round-trips somewhere (the title attr),
+    // not just the visibly truncated line.
+    const longPath = '/products/{id}/a/very/long/path/with/many/segments';
+    renderCard({
+      node: makeNode(),
+      operation: makeOperation({ method: 'get', path: longPath }),
+      selected: false,
+    });
+    expect(screen.getByText(longPath)).toHaveAttribute('title', longPath);
+  });
+
   it('shows the operationId as a legend when present, omits it otherwise', () => {
     const { rerender } = renderCard({
       node: makeNode(),

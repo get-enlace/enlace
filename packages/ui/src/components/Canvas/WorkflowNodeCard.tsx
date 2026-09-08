@@ -81,7 +81,9 @@ export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
         <Handle type="target" position={Position.Left} title="Drop here to connect" />
         <div className="workflow-node__header">
           <span className={`method-badge method-badge--${method}`}>{method.toUpperCase()}</span>
-          <span className="workflow-node__path">{operation?.path ?? 'Unknown operation'}</span>
+          <span className="workflow-node__path" title={operation?.path ?? 'Unknown operation'}>
+            {operation?.path ?? 'Unknown operation'}
+          </span>
         </div>
         {operation?.summary && (
           <div className="workflow-node__summary" title={operation.summary}>
