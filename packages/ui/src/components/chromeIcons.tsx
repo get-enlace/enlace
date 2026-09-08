@@ -131,22 +131,10 @@ export function InfoIcon() {
   );
 }
 
-/** A single die showing 3 pips — "Fill with random data". */
-export function DiceIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3" y="3" width="18" height="18" rx="3" />
-      <circle cx="8" cy="8" r="1.4" fill="currentColor" stroke="none" />
-      <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
-      <circle cx="16" cy="16" r="1.4" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
 /** Wand + sparkles — reformat this JSON (Raw editor's Beautify control). */
 export function BeautifyIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z" />
       <path d="m14 7 3 3" />
       <path d="M5 6v4" />

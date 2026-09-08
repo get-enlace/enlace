@@ -33,7 +33,7 @@ export function randomExprPattern(): RegExp {
   return /\$rand\.([a-zA-Z_$][\w$]*)\(([^()]*)\)/g;
 }
 
-/** Cheap guard so callers can skip the regex machinery for the overwhelming majority of values that never reference `$rand` at all — mirrors bodyTags.ts's `mightContainTag`. */
+/** Cheap guard so callers can skip the regex machinery for the overwhelming majority of values that never reference `$rand` at all. */
 function mightContainRandomExpr(text: string): boolean {
   return text.includes('$rand.');
 }
@@ -74,47 +74,6 @@ function callRandomMethod(method: string, argsText: string): unknown {
 }
 
 /**
- * Resolves every `$rand.method(args)` call found inside a plain (already
- * type-coerced, unquoted) JS string — recursing into arrays/objects the
- * same way bodyTags.ts's `resolveTagsInValue` does for `{{enlace:<id>}}`
- * tags left embedded in a Form-mode field. Used for Form-mode field
- * values, where a `$rand...` call can appear either because the user typed
- * one directly into a static field or because it's what a
- * `source: 'random'` field's value literally is (see @get-enlace/ui's
- * utils/bodyTemplate.ts).
- */
-export function resolveRandomExpressionsInValue(value: unknown): unknown {
-  if (typeof value === 'string') return resolveRandomExpressionsInString(value);
-  if (Array.isArray(value)) return value.map(resolveRandomExpressionsInValue);
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, resolveRandomExpressionsInValue(v)]));
-  }
-  return value;
-}
-
-function resolveRandomExpressionsInString(text: string): unknown {
-  if (!mightContainRandomExpr(text)) return text;
-
-  const matches = [...text.matchAll(randomExprPattern())];
-  // The whole field is exactly one call — preserve its real generated type
-  // (number/boolean/object/array) rather than stringifying it, same as a
-  // whole-string tag match gets in bodyTags.ts's `resolveTagsInString`.
-  if (matches.length === 1 && matches[0][0] === text) {
-    return callRandomMethod(matches[0][1], matches[0][2]);
-  }
-
-  let result = '';
-  let lastIndex = 0;
-  for (const match of matches) {
-    const start = match.index ?? 0;
-    const value = callRandomMethod(match[1], match[2]);
-    result += text.slice(lastIndex, start) + String(value);
-    lastIndex = start + match[0].length;
-  }
-  return result + text.slice(lastIndex);
-}
-
-/**
  * Resolves every `$rand.method(args)` call inside a Raw JSON body/path/
  * query template's raw text — same whole-string-vs-embedded distinction
  * engine/rawBodyResolver.ts's tag loop uses (a call that's the *entire*
@@ -147,18 +106,6 @@ export function resolveRandomExpressionsInRawText(text: string): string {
     lastIndex = spanEnd;
   }
   return result + text.slice(lastIndex);
-}
-
-/**
- * True when `text` is *exactly* one `$rand.method(args)` call, nothing
- * else — used by @get-enlace/ui's utils/bodyTemplate.ts to recognize a
- * Raw-mode leaf that should round-trip to Form mode as a
- * `source: 'random'` field rather than a plain `static` string, the same
- * way a whole-tag-placeholder match becomes a `mapped`/`file` field there.
- */
-export function isWholeRandomExprMatch(text: string): boolean {
-  const matches = [...text.matchAll(randomExprPattern())];
-  return matches.length === 1 && matches[0][0] === text;
 }
 
 /**

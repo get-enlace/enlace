@@ -3,7 +3,16 @@ import { ENLACE_COLLECTION_FORMAT, ENLACE_COLLECTION_VERSION } from '../../packa
 
 // Avoids canvas drag-and-drop (see playwright.config.ts). Imports a
 // collection with POST /products, configures the declared oauth2Password
-// credential (products require it), then picks an optional image and Runs.
+// credential (products require it), then re-selects the file behind an
+// already-configured uploaded_file tag chip and Runs.
+//
+// The Body section is Raw JSON only now (no Form mode) — the fixture's node
+// carries a rawBody with the image field already wired up as an
+// `uploaded_file` tag chip (as if configured in an earlier session); the
+// actual File blob is never persisted across import (see rawBodyResolver.ts
+// and ARCHITECTURE.md's Data Model), so this test's own job is exercising
+// that "re-select the file" recovery path, same as a real re-opened export
+// would need.
 
 const productCollection = {
   format: ENLACE_COLLECTION_FORMAT,
@@ -22,11 +31,10 @@ const productCollection = {
           id: 'product-1',
           kind: 'operation',
           operationId: 'POST /products',
-          requestMode: 'form',
           credentialId: null,
-          fieldValues: {
-            'body.name': { source: 'static', value: 'Gadget' },
-            'body.price': { source: 'static', value: 19.5 },
+          rawBody: {
+            template: JSON.stringify({ name: 'Gadget', price: 19.5, image: '{{enlace:tag1}}' }, null, 2),
+            tags: { tag1: { id: 'tag1', type: 'uploaded_file', fileName: 'placeholder.png' } },
           },
         },
       ],
@@ -41,7 +49,7 @@ async function openCredentialsDrawer(page: Page) {
   await page.getByRole('menuitem', { name: /Credentials \(\d+\)/ }).click();
 }
 
-test('POST /products multipart: optional image, Run, see imageLocation', async ({ page }) => {
+test('POST /products multipart: re-select the image behind an uploaded_file tag, Run, see imageLocation', async ({ page }) => {
   test.setTimeout(60_000);
   await page.goto('/enlace/');
   await expect(page.getByRole('button', { name: 'Run', exact: true })).toBeVisible();
@@ -63,21 +71,22 @@ test('POST /products multipart: optional image, Run, see imageLocation', async (
 
   await page.locator('.react-flow__node').filter({ hasText: '/products' }).click();
   await expect(page.getByRole('heading', { name: 'Body' })).toBeVisible();
-  // Raw mode is no longer form-only for multipart — it can hold a file
-  // field via an uploaded_file tag (see rawBodyResolver.ts) — so the
-  // toggle is present; this test just stays in Form mode throughout.
-  await expect(page.getByRole('checkbox', { name: /Switch to Raw view/ })).toHaveCount(1);
 
   // Attach the oauth2 credential via the lock menu.
   await page.getByRole('button', { name: 'Credential' }).click();
   await page.getByRole('option', { name: 'oauth2Password' }).click();
 
-  await page.getByLabel('body.image').setInputFiles({
+  // The image field is already an uploaded_file tag chip (imported above) —
+  // click it to open the config modal and re-select the file, same recovery
+  // flow a real re-opened export needs (the blob itself is never persisted).
+  await page.locator('.tag-chip', { hasText: 'placeholder.png' }).click();
+  await page.getByLabel('File to upload').setInputFiles({
     name: 'gadget.png',
     mimeType: 'image/png',
     buffer: Buffer.from('fake-png-bytes'),
   });
-  await expect(page.getByText('gadget.png')).toBeVisible();
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.locator('.tag-chip', { hasText: 'gadget.png' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Run', exact: true }).click();
 

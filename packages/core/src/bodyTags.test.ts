@@ -4,7 +4,6 @@ import {
   isWholeStringMatch,
   makeTagPlaceholder,
   resolveJsonPath,
-  resolveTagsInValue,
   resolveTagValue,
   tagPattern,
 } from './bodyTags.js';
@@ -129,42 +128,3 @@ describe('resolveTagValue', () => {
   });
 });
 
-describe('resolveTagsInValue', () => {
-  const tags: Record<string, BodyTag> = {
-    tag1: { id: 'tag1', type: 'response_body', sourceNodeId: 'node-a', jsonPath: 'id' },
-  };
-  const stepsByNodeId = new Map([['node-a', step('node-a', { status: 200, headers: {}, body: { id: 42 } })]]);
-
-  it('leaves a plain value with no tag reference untouched', () => {
-    expect(resolveTagsInValue('plain text', tags, stepsByNodeId)).toBe('plain text');
-    expect(resolveTagsInValue(5, tags, stepsByNodeId)).toBe(5);
-    expect(resolveTagsInValue(null, tags, stepsByNodeId)).toBe(null);
-  });
-
-  it('resolves a whole-string field to the value\'s real type, not a stringified one', () => {
-    expect(resolveTagsInValue('{{enlace:tag1}}', tags, stepsByNodeId)).toBe(42);
-  });
-
-  it('splices a resolved value as text when embedded inside a larger string', () => {
-    // This is the exact scenario from a lossy Raw -> Form conversion: a
-    // tag chip that ended up embedded in a static field (e.g. someone
-    // typed "str" right before an existing whole-match chip) — the field
-    // still resolves correctly even without a "Map from..." UI for it.
-    expect(resolveTagsInValue('str{{enlace:tag1}}', tags, stepsByNodeId)).toBe('str42');
-    expect(resolveTagsInValue('id={{enlace:tag1}}&x=1', tags, stepsByNodeId)).toBe('id=42&x=1');
-  });
-
-  it('recurses into arrays and objects', () => {
-    expect(resolveTagsInValue(['a', '{{enlace:tag1}}'], tags, stepsByNodeId)).toEqual(['a', 42]);
-    expect(resolveTagsInValue({ a: 'str{{enlace:tag1}}' }, tags, stepsByNodeId)).toEqual({ a: 'str42' });
-  });
-
-  it('throws when the tag id is not registered', () => {
-    expect(() => resolveTagsInValue('{{enlace:missing}}', tags, stepsByNodeId)).toThrow(/unknown tag/);
-  });
-
-  it('rejects an uploaded_file tag embedded in an ordinary field — a File can\'t be resolved outside a raw body\'s own multipart handling (see rawBodyResolver.ts)', () => {
-    const fileTags: Record<string, BodyTag> = { tag1: { id: 'tag1', type: 'uploaded_file', fileName: 'photo.png' } };
-    expect(() => resolveTagsInValue('{{enlace:tag1}}', fileTags, stepsByNodeId)).toThrow(/uploaded-file tag/);
-  });
-});

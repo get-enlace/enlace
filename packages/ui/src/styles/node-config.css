@@ -177,38 +177,6 @@
   font-style: italic;
 }
 
-.node-config__section-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.node-config__section-title-row .node-config__section-title {
-  margin-bottom: 0;
-}
-
-.node-config__fill-random {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: none;
-  border-radius: 4px;
-  color: var(--color-text-muted);
-  background: transparent;
-  cursor: pointer;
-}
-
-.node-config__fill-random:hover:not(:disabled) {
-  color: var(--color-text);
-  background: var(--color-border);
-}
-
 /* A `$rand.method(args)` call reads like code — same treatment the Raw
    JSON editor and the array-field textarea already give expression-ish
    text. */

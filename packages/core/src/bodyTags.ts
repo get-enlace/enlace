@@ -1,5 +1,5 @@
 import { getByPath } from './engine/path.js';
-import type { BodyTag, ResponseBodyTag, ResponseBodyTagRef, RunStep } from './types.js';
+import type { ResponseBodyTagRef, RunStep } from './types.js';
 
 /**
  * Matches a tag placeholder anywhere in a Raw JSON body's template text,
@@ -94,12 +94,10 @@ export function getHeaderCaseInsensitive(headers: Record<string, string>, name: 
 
 /**
  * Resolves one tag's configured source against the chain's already-
- * captured responses. Shared by engine/rawBodyResolver.ts (Raw JSON body
- * templates) and `resolveTagsInValue` below (a tag placeholder that ended
- * up embedded in an ordinary form-mode static field, e.g. after a lossy
- * Raw->Form conversion — see utils/bodyTemplate.ts). Throws (never
- * silently substitutes a placeholder) if the source node hasn't produced
- * a response yet, or a referenced header is missing.
+ * captured responses. Used by engine/rawBodyResolver.ts (Raw JSON body
+ * templates) and directly by an `AssertCheck.source` (types.ts). Throws
+ * (never silently substitutes a placeholder) if the source node hasn't
+ * produced a response yet, or a referenced header is missing.
  *
  * `nodeLabels` (from utils/nodeLabel.ts's `buildNodeLabels`) turns internal
  * node ids into the same names the canvas/chips show — error text is for
@@ -148,78 +146,3 @@ export function resolveTagValue(
   }
 }
 
-/** True if `text` contains at least one tag placeholder — a cheap guard so `resolveTagsInValue` can skip the regex machinery for the overwhelming majority of plain field values that never reference a tag at all. */
-function mightContainTag(text: string): boolean {
-  return text.includes('{{enlace:');
-}
-
-function resolveTagsInString(
-  text: string,
-  tags: Record<string, BodyTag>,
-  stepsByNodeId: Map<string, RunStep>,
-  nodeLabels?: Map<string, string>
-): unknown {
-  if (!mightContainTag(text)) return text;
-
-  const matches = [...text.matchAll(tagPattern())];
-  // `uploaded_file` never reaches this far in practice — utils/bodyTemplate.ts
-  // only ever converts one into a `source: 'file'` field, never a plain
-  // static string — but a hand-edited/stale document could still smuggle
-  // one in here, and a `File` has no sensible resolution as embedded text
-  // (unlike engine/rawBodyResolver.ts's own body-template resolution, this
-  // path has no multipart FormData to hand the real File to), so this is
-  // rejected outright rather than silently stringified.
-  const tagFor = (id: string): ResponseBodyTag => {
-    const tag = tags[id];
-    if (!tag) throw new Error(`Body references unknown tag "${id}".`);
-    if (tag.type === 'uploaded_file') {
-      throw new Error(`Body references an uploaded-file tag "${id}" outside of a file field — that mapping can't be resolved here.`);
-    }
-    return tag;
-  };
-
-  // The whole field is exactly one placeholder — same "preserve the real
-  // type" treatment as a whole-string match in a Raw JSON template (see
-  // rawBodyResolver.ts), just without any surrounding JSON quotes to
-  // reason about since `text` here is already a plain, parsed JS string.
-  if (matches.length === 1 && matches[0][0] === text) {
-    return resolveTagValue(tagFor(matches[0][1]), stepsByNodeId, nodeLabels);
-  }
-
-  let result = '';
-  let lastIndex = 0;
-  for (const match of matches) {
-    const start = match.index ?? 0;
-    const value = resolveTagValue(tagFor(match[1]), stepsByNodeId, nodeLabels);
-    result += text.slice(lastIndex, start) + String(value);
-    lastIndex = start + match[0].length;
-  }
-  return result + text.slice(lastIndex);
-}
-
-/**
- * Resolves any tag placeholder(s) found inside an ordinary (already
- * type-coerced) field value — recursing into arrays/objects — using the
- * same whole-vs-embedded rule as the Raw JSON body resolver. This is what
- * lets a tag chip keep working even after a lossy Raw->Form conversion
- * left it embedded in a static string field (utils/bodyTemplate.ts):
- * Form mode has no "Map from..." UI for that value anymore, but the
- * mapping itself isn't silently broken — it still resolves at request
- * time, from the same `tags` the node's `rawBody` still carries even
- * while `requestMode` is `'form'` (switching modes never clears `rawBody`).
- */
-export function resolveTagsInValue(
-  value: unknown,
-  tags: Record<string, BodyTag>,
-  stepsByNodeId: Map<string, RunStep>,
-  nodeLabels?: Map<string, string>
-): unknown {
-  if (typeof value === 'string') return resolveTagsInString(value, tags, stepsByNodeId, nodeLabels);
-  if (Array.isArray(value)) return value.map((item) => resolveTagsInValue(item, tags, stepsByNodeId, nodeLabels));
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value).map(([k, v]) => [k, resolveTagsInValue(v, tags, stepsByNodeId, nodeLabels)])
-    );
-  }
-  return value;
-}

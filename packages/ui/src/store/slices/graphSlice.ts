@@ -3,6 +3,7 @@ import { connectionKey } from '@get-enlace/core';
 import { findOpenPosition } from '../../utils/nodePlacement.js';
 import { expandedGroupFrame, sortGroupMemberIds } from '../../utils/groupGeometry.js';
 import { randomId } from '../../utils/randomId.js';
+import { buildDefaultRawBody, buildDefaultRawParams } from '../../utils/rawDefaults.js';
 import type { AssertCheck, FieldValue, NewPreset, Preset, NodeGroup, RawBody, WorkflowConnection, WorkflowNode } from '../../types.js';
 import {
   defaultPosition,
@@ -48,7 +49,7 @@ export interface GraphSlice {
   /** Appends one blank check to an assert preset's `checks` list. No-op if `presetsNodeId`/`presetId` don't resolve to an assert preset. */
   addAssertCheck: (presetsNodeId: string, presetId: string) => void;
   removeAssertCheck: (presetsNodeId: string, presetId: string, checkId: string) => void;
-  /** Shallow-merges `patch` into one check — same "patch one field at a time" shape as `setFieldValue`. */
+  /** Shallow-merges `patch` into one check. */
   updateAssertCheck: (
     presetsNodeId: string,
     presetId: string,
@@ -61,14 +62,12 @@ export interface GraphSlice {
   selectNode: (nodeId: string | null) => void;
   selectPreset: (presetsNodeId: string, presetId: string) => void;
   setCredential: (nodeId: string, credentialId: string | null) => void;
-  setFieldValue: (nodeId: string, fieldPath: string, value: FieldValue) => void;
-  mergeFieldValues: (nodeId: string, values: Record<string, FieldValue>) => void;
   setCredentialExtraParamOverride: (nodeId: string, key: string, value: FieldValue | null) => void;
   setCredentialExtraParamOverridesEnabled: (nodeId: string, enabled: boolean) => void;
   setUploadedFile: (nodeId: string, fieldPath: string, file: File | null) => void;
-  setRequestMode: (nodeId: string, mode: 'form' | 'raw') => void;
   setRawPath: (nodeId: string, rawPath: RawBody | null) => void;
   setRawQuery: (nodeId: string, rawQuery: RawBody | null) => void;
+  setRawHeaders: (nodeId: string, rawHeaders: RawBody | null) => void;
   setRawBody: (nodeId: string, rawBody: RawBody | null) => void;
   connectNodes: (fromNodeId: string, toNodeId: string) => void;
   disconnectNodes: (fromNodeId: string, toNodeId: string) => void;
@@ -103,13 +102,21 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
   addNode: (operationId, position) => {
     if (isLocked(get())) return '';
     const id = randomId();
+    // Every section opens pre-seeded with a Raw JSON skeleton straight from
+    // the operation's schema — there's no Form mode to lazily generate one
+    // from on first switch any more, so this is the only place it happens.
+    // `null` (no path params, no body, etc.) is a real, valid section state
+    // — NodeConfig.tsx just doesn't render that editor at all.
+    const operation = get().operations.find((o) => o.id === operationId);
     const node: WorkflowNode = {
       id,
       kind: 'operation',
       operationId,
-      requestMode: 'form',
       credentialId: null,
-      fieldValues: {},
+      rawPath: operation ? buildDefaultRawParams('path', operation) : null,
+      rawQuery: operation ? buildDefaultRawParams('query', operation) : null,
+      rawHeaders: operation ? buildDefaultRawParams('header', operation) : null,
+      rawBody: operation ? buildDefaultRawBody(operation) : null,
     };
     set((state) => {
       const desired = position ?? defaultPosition(state.nodes.length);
@@ -127,7 +134,7 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
     if (isLocked(get())) return '';
     const id = randomId();
     const presets: Preset[] = initialPreset ? [{ ...initialPreset, id: randomId() }] : [];
-    const node: WorkflowNode = { id, kind: 'presets', credentialId: null, fieldValues: {}, presets };
+    const node: WorkflowNode = { id, kind: 'presets', credentialId: null, presets };
     set((state) => {
       const desired = position ?? defaultPosition(state.nodes.length);
       const obstacles = Object.values(state.nodePositions);
@@ -312,44 +319,31 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
         if (key.startsWith(prefix)) delete uploadedFiles[key];
       }
 
+      // A Raw JSON section's own tag chips referencing this node are
+      // deliberately left alone here — RawBodyEditor.tsx already renders a
+      // dangling `sourceNodeId` as a visible "broken" chip the user can fix
+      // or remove, so there's nothing for this cleanup pass to silently
+      // paper over the way a Form-mode fieldValues entry used to need.
       const nodes = state.nodes
         .filter((n) => n.id !== nodeId)
         .map((n) => {
-          const fieldValues = { ...n.fieldValues };
-          let changed = false;
-          for (const [path, fv] of Object.entries(fieldValues)) {
-            if (fv.source === 'mapped' && fv.fromNodeId === nodeId) {
-              fieldValues[path] = { source: 'static', value: '' };
-              changed = true;
-            }
-          }
+          if (n.kind === 'presets') return n;
 
-          if (n.kind === 'presets') {
-            return changed ? { ...n, fieldValues } : n;
-          }
-
-          // Same dangling-reference cleanup as fieldValues above, but a
-          // mapped override has no "static" fallback that makes sense here
-          // (there's no value to fall back to but the credential's own,
-          // which just means dropping the override entirely) — see
+          // A mapped override has no "static" fallback that makes sense
+          // here (there's no value to fall back to but the credential's
+          // own, which just means dropping the override entirely) — see
           // credentialExtraParamOverrides's own comment on WorkflowNode.
-          let credentialExtraParamOverrides = n.credentialExtraParamOverrides;
-          if (credentialExtraParamOverrides) {
-            const next = { ...credentialExtraParamOverrides };
-            let overridesChanged = false;
-            for (const [key, fv] of Object.entries(next)) {
-              if (fv.source === 'mapped' && fv.fromNodeId === nodeId) {
-                delete next[key];
-                overridesChanged = true;
-              }
-            }
-            if (overridesChanged) {
-              credentialExtraParamOverrides = next;
+          const credentialExtraParamOverrides = n.credentialExtraParamOverrides;
+          if (!credentialExtraParamOverrides) return n;
+          const next = { ...credentialExtraParamOverrides };
+          let changed = false;
+          for (const [key, fv] of Object.entries(next)) {
+            if (fv.source === 'mapped' && fv.fromNodeId === nodeId) {
+              delete next[key];
               changed = true;
             }
           }
-
-          return changed ? { ...n, fieldValues, credentialExtraParamOverrides } : n;
+          return changed ? { ...n, credentialExtraParamOverrides: next } : n;
         });
 
       // Drop the node from any group; dissolve groups left with < 2 members.
@@ -377,33 +371,6 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
     set((state) => {
       if (isLocked(state)) return state;
       return { nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, credentialId } : n)) };
-    }),
-
-  setFieldValue: (nodeId, fieldPath, value) =>
-    set((state) => {
-      if (isLocked(state)) return state;
-      const uploadedFiles = { ...state.uploadedFiles };
-      const key = uploadedFileKey(nodeId, fieldPath);
-      if (value.source !== 'file') delete uploadedFiles[key];
-      return {
-        uploadedFiles,
-        nodes: state.nodes.map((n) =>
-          n.id === nodeId ? { ...n, fieldValues: { ...n.fieldValues, [fieldPath]: value } } : n
-        ),
-      };
-    }),
-
-  mergeFieldValues: (nodeId, values) =>
-    set((state) => {
-      if (isLocked(state)) return state;
-      const uploadedFiles = { ...state.uploadedFiles };
-      for (const [fieldPath, value] of Object.entries(values)) {
-        if (value.source !== 'file') delete uploadedFiles[uploadedFileKey(nodeId, fieldPath)];
-      }
-      return {
-        uploadedFiles,
-        nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, fieldValues: { ...n.fieldValues, ...values } } : n)),
-      };
     }),
 
   // `null` clears the override (falls back to the credential's own
@@ -437,6 +404,9 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
       };
     }),
 
+  // The `File` blob itself only ever lives here — RawBodyEditor's own
+  // `uploaded_file` tag chip carries just a `fileName` marker (see
+  // types.ts's `BodyTag`), keyed the same way via `rawFileTagFieldPath`.
   setUploadedFile: (nodeId, fieldPath, file) =>
     set((state) => {
       if (isLocked(state)) return state;
@@ -444,25 +414,7 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
       const uploadedFiles = { ...state.uploadedFiles };
       if (file) uploadedFiles[key] = file;
       else delete uploadedFiles[key];
-
-      return {
-        uploadedFiles,
-        nodes: state.nodes.map((n) => {
-          if (n.id !== nodeId) return n;
-          const fieldValues = { ...n.fieldValues };
-          if (file) fieldValues[fieldPath] = { source: 'file', fileName: file.name };
-          else delete fieldValues[fieldPath];
-          return { ...n, fieldValues };
-        }),
-      };
-    }),
-
-  setRequestMode: (nodeId, mode) =>
-    set((state) => {
-      if (isLocked(state)) return state;
-      return {
-        nodes: state.nodes.map((n) => (n.id === nodeId && n.kind !== 'presets' ? { ...n, requestMode: mode } : n)),
-      };
+      return { uploadedFiles };
     }),
 
   setRawPath: (nodeId, rawPath) =>
@@ -478,6 +430,14 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
       if (isLocked(state)) return state;
       return {
         nodes: state.nodes.map((n) => (n.id === nodeId && n.kind !== 'presets' ? { ...n, rawQuery } : n)),
+      };
+    }),
+
+  setRawHeaders: (nodeId, rawHeaders) =>
+    set((state) => {
+      if (isLocked(state)) return state;
+      return {
+        nodes: state.nodes.map((n) => (n.id === nodeId && n.kind !== 'presets' ? { ...n, rawHeaders } : n)),
       };
     }),
 

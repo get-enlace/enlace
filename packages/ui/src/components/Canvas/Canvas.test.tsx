@@ -100,7 +100,7 @@ describe('Canvas', () => {
 
   it('marks the store-selected node as selected on the React Flow node so Delete/Backspace can remove it', () => {
     useWorkflowStore.setState({
-      nodes: [{ id: 'n1', kind: 'operation', operationId: 'POST /pet', requestMode: 'form', credentialId: null, fieldValues: {} }],
+      nodes: [{ id: 'n1', kind: 'operation', operationId: 'POST /pet', credentialId: null }],
       nodePositions: { n1: { x: 0, y: 0 } },
       selectedNodeId: 'n1',
       operations: [petOperation],
@@ -114,7 +114,7 @@ describe('Canvas', () => {
 
   it("highlights a node's card while its step status is in-flight", () => {
     useWorkflowStore.setState({
-      nodes: [{ id: 'n1', kind: 'operation', operationId: 'POST /pet', requestMode: 'form', credentialId: null, fieldValues: {} }],
+      nodes: [{ id: 'n1', kind: 'operation', operationId: 'POST /pet', credentialId: null }],
       nodePositions: { n1: { x: 0, y: 0 } },
       connections: [],
       operations: [petOperation],
@@ -137,7 +137,7 @@ describe('Canvas', () => {
 
     it('does not select a node on click while locked', () => {
       useWorkflowStore.setState({
-        nodes: [{ id: 'n1', kind: 'operation', operationId: 'POST /pet', requestMode: 'form', credentialId: null, fieldValues: {} }],
+        nodes: [{ id: 'n1', kind: 'operation', operationId: 'POST /pet', credentialId: null }],
         nodePositions: { n1: { x: 0, y: 0 } },
         selectedNodeId: null,
         operations: [petOperation],
@@ -153,7 +153,7 @@ describe('Canvas', () => {
 
     it('still selects a node on click while unlocked (the default)', () => {
       useWorkflowStore.setState({
-        nodes: [{ id: 'n1', kind: 'operation', operationId: 'POST /pet', requestMode: 'form', credentialId: null, fieldValues: {} }],
+        nodes: [{ id: 'n1', kind: 'operation', operationId: 'POST /pet', credentialId: null }],
         nodePositions: { n1: { x: 0, y: 0 } },
         selectedNodeId: null,
         operations: [petOperation],
@@ -167,7 +167,7 @@ describe('Canvas', () => {
 
     it('deselects a node that was already selected the moment the canvas is locked', () => {
       useWorkflowStore.setState({
-        nodes: [{ id: 'n1', kind: 'operation', operationId: 'POST /pet', requestMode: 'form', credentialId: null, fieldValues: {} }],
+        nodes: [{ id: 'n1', kind: 'operation', operationId: 'POST /pet', credentialId: null }],
         nodePositions: { n1: { x: 0, y: 0 } },
         selectedNodeId: 'n1',
         operations: [petOperation],
@@ -183,7 +183,7 @@ describe('Canvas', () => {
 
   it("doesn't apply the in-flight pulse to a node that's already settled", () => {
     useWorkflowStore.setState({
-      nodes: [{ id: 'n1', kind: 'operation', operationId: 'POST /pet', requestMode: 'form', credentialId: null, fieldValues: {} }],
+      nodes: [{ id: 'n1', kind: 'operation', operationId: 'POST /pet', credentialId: null }],
       nodePositions: { n1: { x: 0, y: 0 } },
       connections: [],
       operations: [petOperation],

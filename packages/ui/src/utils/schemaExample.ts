@@ -38,13 +38,13 @@ function firstBranch(schema: Schema): Schema | undefined {
 
 /**
  * Recursively builds a realistic nested JSON example from a request body
- * schema — this is what pre-fills the Raw JSON editor. Unlike
- * flattenSchema.ts's `flattenObjectSchema` (which stops at arrays and
- * disables oneOf/anyOf/allOf entirely, since those can't be represented as
- * flat form fields), this produces *something* concrete for every shape:
+ * schema — this is what pre-fills the Raw JSON body editor (see
+ * utils/rawDefaults.ts's `buildDefaultRawBody`, its only caller). Produces
+ * *something* concrete for every shape, including ones flattenSchema.ts's
+ * `flattenObjectSchema` can't cleanly enumerate as a flat field list
+ * (oneOf/anyOf/allOf, which that function marks unsupported instead):
  * arrays get one example item, oneOf/anyOf take their first branch, allOf
- * is merged. That's the whole point of Raw mode — schema shapes the form
- * generator can't handle still get a usable starting point here.
+ * is merged.
  */
 export function buildSchemaExample(schema: Schema | null | undefined): unknown {
   if (!schema) return null;
@@ -74,68 +74,4 @@ export function buildSchemaExample(schema: Schema | null | undefined): unknown {
   }
 
   return emptyScalarValue(schema);
-}
-
-/**
- * Same recursive walk as `buildSchemaExample`, but every *required* scalar
- * leaf is produced by `guessLeaf` — a real, concretely-typed generated
- * value (see randomFill.ts's `fillRawBodyWithRandomData`, the only caller)
- * — instead of a placeholder. Optional properties are left `null`, same
- * required-check and same "no `required` array at all means fill
- * everything" edge case as `buildSchemaExample` above: a bulk "fill with
- * random data" action is meant to produce a plausible, ready-to-run body,
- * not one padded out with guesses for fields the caller never asked for.
- * `guessLeaf` only ever sees the non-enum, non-file case: an enum leaf
- * gets one of its own declared values instead (Chance has no notion of an
- * API-specific enum), and a `format: 'binary'` leaf (file upload) is left
- * blank — same as Form mode's `fillBodyWithRandomData`, which skips file
- * fields entirely since there's no file to attach from a bulk-fill action.
- */
-export function buildRandomSchemaExample(schema: Schema | null | undefined, guessLeaf: (schema: Schema) => unknown): unknown {
-  if (!schema) return null;
-
-  if (schema.allOf?.length) return buildRandomSchemaExample(mergeAllOf(schema.allOf), guessLeaf);
-
-  const branch = firstBranch(schema);
-  if (branch) return buildRandomSchemaExample(branch, guessLeaf);
-
-  if (isArraySchema(schema)) return [buildRandomSchemaExample(schema.items, guessLeaf)];
-
-  if (isObjectSchema(schema)) {
-    const example: Record<string, unknown> = {};
-    const required: string[] | undefined = schema.required;
-    for (const [propName, propSchema] of Object.entries<Schema>(schema.properties ?? {})) {
-      example[propName] = !required || required.includes(propName) ? buildRandomSchemaExample(propSchema, guessLeaf) : null;
-    }
-    return example;
-  }
-
-  if (schema.format === 'binary') return '';
-  if (schema.enum?.length) return schema.enum[Math.floor(Math.random() * schema.enum.length)];
-  return guessLeaf(schema);
-}
-
-/**
- * True if any property anywhere in the schema (recursively) is a shape
- * the flat form generator can't cleanly represent: a polymorphic
- * oneOf/anyOf/allOf, or an array of objects (form mode edits an array as
- * one opaque JSON-text blob, with no way to map a response value into a
- * specific item's field). Drives the Node Config's "suggest Raw mode"
- * banner — see NodeConfig.tsx.
- */
-export function hasUnrepresentableShape(schema: Schema | null | undefined): boolean {
-  if (!schema) return false;
-  if (schema.oneOf?.length || schema.anyOf?.length || schema.allOf?.length) return true;
-
-  if (isArraySchema(schema)) {
-    const items = schema.items;
-    if (isObjectSchema(items)) return true;
-    return hasUnrepresentableShape(items);
-  }
-
-  if (isObjectSchema(schema)) {
-    return Object.values<Schema>(schema.properties ?? {}).some(hasUnrepresentableShape);
-  }
-
-  return false;
 }

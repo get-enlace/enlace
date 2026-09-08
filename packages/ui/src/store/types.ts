@@ -217,7 +217,7 @@ export interface WorkflowState {
   addAssertCheck: (presetsNodeId: string, presetId: string) => void;
   /** Removes one check from an assert preset by its check id. */
   removeAssertCheck: (presetsNodeId: string, presetId: string, checkId: string) => void;
-  /** Shallow-merges `patch` into one assert check — same "patch one field at a time" shape as `setFieldValue`. */
+  /** Shallow-merges `patch` into one assert check. */
   updateAssertCheck: (
     presetsNodeId: string,
     presetId: string,
@@ -236,10 +236,12 @@ export interface WorkflowState {
    */
   updateNodePosition: (nodeId: string, position: Position, options?: { avoidOverlap?: boolean }) => void;
   /**
-   * Removes a node and everything that referenced it: its connections
-   * (either direction), and any other node's field mapped from it (reset
-   * to an empty static value — a dangling `fromNodeId` would otherwise
-   * silently resolve to `undefined` at run time instead of failing loudly).
+   * Removes a node and its connections (either direction). A Raw JSON
+   * section's own tag chip mapped from it is deliberately left as-is —
+   * RawBodyEditor.tsx already renders a dangling `sourceNodeId` as a
+   * visible "broken" chip the user can fix or remove, so there's no
+   * silent-`undefined`-at-run-time risk the way a Form-mode field mapping
+   * used to have to guard against.
    */
   removeNode: (nodeId: string) => void;
   /** Also clears `selectedPresetId` — a preset selection never survives switching (or clearing) the selected node. */
@@ -247,9 +249,6 @@ export interface WorkflowState {
   /** Opens one preset's config in NodeConfig — sets `selectedNodeId` to the owning collection and `selectedPresetId` to the preset, in one step (so clicking a preset row selects the collection too, even if it wasn't already). */
   selectPreset: (presetsNodeId: string, presetId: string) => void;
   setCredential: (nodeId: string, credentialId: string | null) => void;
-  setFieldValue: (nodeId: string, fieldPath: string, value: FieldValue) => void;
-  /** Batch version of setFieldValue — sets several field paths in one `set()`, so a Raw->Form conversion (which can touch many leaves at once, see utils/bodyTemplate.ts) doesn't trigger a render per leaf. */
-  mergeFieldValues: (nodeId: string, values: Record<string, FieldValue>) => void;
   /**
    * Sets (or, passing `null`, clears) one override in a node's
    * `credentialExtraParamOverrides` — see that field's own comment on
@@ -267,18 +266,19 @@ export interface WorkflowState {
    */
   setCredentialExtraParamOverridesEnabled: (nodeId: string, enabled: boolean) => void;
   /**
-   * Sets or clears a file field: updates `fieldValues` with a `file` marker
-   * (or removes it) and keeps the real `File` only in `uploadedFiles`.
+   * Sets (or clears) the real `File` blob for a raw body's `uploaded_file`
+   * tag — the tag chip itself only ever carries a `fileName` marker (see
+   * types.ts's `BodyTag`); the actual blob lives only here, in
+   * `uploadedFiles`, keyed via `rawFileTagFieldPath`.
    */
   setUploadedFile: (nodeId: string, fieldPath: string, file: File | null) => void;
-  /** Toggles a node's request editor between the flat form and Raw JSON — see NodeConfig.tsx for the Form<->Raw conversion this surrounds. */
-  setRequestMode: (nodeId: string, mode: 'form' | 'raw') => void;
   setRawPath: (nodeId: string, rawPath: RawBody | null) => void;
   setRawQuery: (nodeId: string, rawQuery: RawBody | null) => void;
+  setRawHeaders: (nodeId: string, rawHeaders: RawBody | null) => void;
   setRawBody: (nodeId: string, rawBody: RawBody | null) => void;
   /** Establishes execution ORDER only — separate from field mapping (data source). */
   connectNodes: (fromNodeId: string, toNodeId: string) => void;
-  /** Removes one explicit connection edge. Doesn't touch fieldValues — a mapped field that happens to rely on this same ordering still implies its own "runs after" edge regardless (see computeExecutionLevels), so this can't silently break a dependency the way removeNode's cleanup has to guard against. Also disarms any breakpoint on that connection — same dangling-reference reasoning as removeNode's fieldValues cleanup. */
+  /** Removes one explicit connection edge. Doesn't touch any Raw section's tag chips — a mapped tag that happens to rely on this same ordering still implies its own "runs after" edge regardless (see computeExecutionLevels), so this can't silently break a dependency. Also disarms any breakpoint on that connection — same dangling-reference reasoning as removeNode's own cleanup. */
   disconnectNodes: (fromNodeId: string, toNodeId: string) => void;
   /**
    * Creates a canvas group from two nodes (drop-overlap create). Places the

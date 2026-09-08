@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  isWholeRandomExprMatch,
-  listRandomMethodNames,
-  resolveRandomExpressionsInRawText,
-  resolveRandomExpressionsInValue,
-} from './randomExpr.js';
+import { listRandomMethodNames, resolveRandomExpressionsInRawText } from './randomExpr.js';
 
 describe('resolveRandomExpressionsInRawText', () => {
   it('leaves text with no $rand call untouched', () => {
@@ -39,35 +34,6 @@ describe('resolveRandomExpressionsInRawText', () => {
 
   it('throws a clear error when the args block fails to parse', () => {
     expect(() => resolveRandomExpressionsInRawText('{"x":"$rand.integer({min: )"}')).toThrow(/Couldn't parse arguments/);
-  });
-});
-
-describe('resolveRandomExpressionsInValue', () => {
-  it('resolves a $rand call that is a whole Form-mode field value', () => {
-    expect(resolveRandomExpressionsInValue('$rand.integer({min: 3, max: 3})')).toBe(3);
-  });
-
-  it('leaves a plain string with no $rand call untouched', () => {
-    expect(resolveRandomExpressionsInValue('hello')).toBe('hello');
-  });
-
-  it('recurses into nested arrays/objects', () => {
-    const value = { items: ['$rand.integer({min: 9, max: 9})', { n: '$rand.integer({min: 4, max: 4})' }] };
-    expect(resolveRandomExpressionsInValue(value)).toEqual({ items: [9, { n: 4 }] });
-  });
-});
-
-describe('isWholeRandomExprMatch', () => {
-  it('is true for exactly one call and nothing else', () => {
-    expect(isWholeRandomExprMatch('$rand.first()')).toBe(true);
-  });
-
-  it('is false when embedded in other text', () => {
-    expect(isWholeRandomExprMatch('id-$rand.guid()')).toBe(false);
-  });
-
-  it('is false for plain text', () => {
-    expect(isWholeRandomExprMatch('hello')).toBe(false);
   });
 });
 

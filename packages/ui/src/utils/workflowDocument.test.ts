@@ -35,13 +35,8 @@ const node: WorkflowNode = {
   kind: 'operation',
   operationId: 'POST /orders',
   credentialId: 'c-bearer',
-  fieldValues: {
-    'body.qty': { source: 'static', value: 2 },
-    'body.customerId': { source: 'mapped', fromNodeId: 'n0', fromResponseFieldPath: 'id' },
-  },
-  requestMode: 'raw',
   rawBody: {
-    template: '{"id":"{{enlace:tag-1}}"}',
+    template: '{"qty":2,"customerId":"{{enlace:tag-1}}"}',
     tags: { 'tag-1': { id: 'tag-1', type: 'response_body', sourceNodeId: 'n0', jsonPath: 'id' } },
   },
 };
@@ -121,9 +116,9 @@ describe('serializeCollection', () => {
     const doc = serializeCollection({
       name: 'Grouped',
       nodes: [
-        { id: 'n1', kind: 'operation', operationId: 'GET /a', requestMode: 'form', credentialId: null, fieldValues: {} },
-        { id: 'n2', kind: 'operation', operationId: 'GET /b', requestMode: 'form', credentialId: null, fieldValues: {} },
-        { id: 'n3', kind: 'operation', operationId: 'GET /c', requestMode: 'form', credentialId: null, fieldValues: {} },
+        { id: 'n1', kind: 'operation', operationId: 'GET /a', credentialId: null },
+        { id: 'n2', kind: 'operation', operationId: 'GET /b', credentialId: null },
+        { id: 'n3', kind: 'operation', operationId: 'GET /c', credentialId: null },
       ],
       connections: [],
       nodePositions: { n1: { x: 0, y: 0 }, n2: { x: 10, y: 10 }, n3: { x: 200, y: 0 } },
@@ -145,7 +140,6 @@ describe('serializeCollection', () => {
       id: 'w1',
       kind: 'presets',
       credentialId: null,
-      fieldValues: {},
       presets: [{ id: 's1', kind: 'wait', durationMs: 2500 }],
     };
     const doc = serializeCollection({
@@ -179,7 +173,6 @@ describe('serializeCollection', () => {
               id: 'w1',
               kind: 'presets',
               credentialId: null,
-              fieldValues: {},
               presets: [{ id: 's1', kind: 'wait', durationMs: -5 }],
             },
           ],
@@ -197,7 +190,6 @@ describe('serializeCollection', () => {
       id: 'w1',
       kind: 'presets',
       credentialId: null,
-      fieldValues: {},
       presets: [
         {
           id: 's1',
@@ -235,7 +227,6 @@ describe('serializeCollection', () => {
               id: 'w1',
               kind: 'presets',
               credentialId: null,
-              fieldValues: {},
               presets: [
                 {
                   id: 's1',
@@ -263,7 +254,6 @@ describe('serializeCollection', () => {
               id: 'w1',
               kind: 'presets',
               credentialId: null,
-              fieldValues: {},
               presets: [
                 {
                   id: 's1',
@@ -293,7 +283,6 @@ describe('serializeCollection', () => {
               id: 'w1',
               kind: 'presets',
               credentialId: null,
-              fieldValues: {},
               presets: [
                 {
                   id: 's1',
@@ -320,8 +309,6 @@ describe('serializeCollection', () => {
       kind: 'operation',
       operationId: 'POST /orders',
       credentialId: null,
-      fieldValues: {},
-      requestMode: 'raw',
       rawBody: {
         template: '{"image":"{{enlace:tag-file}}"}',
         tags: { 'tag-file': { id: 'tag-file', type: 'uploaded_file', fileName: 'photo.png' } },
@@ -354,8 +341,6 @@ describe('serializeCollection', () => {
               kind: 'operation',
               operationId: 'POST /orders',
               credentialId: null,
-              fieldValues: {},
-              requestMode: 'raw',
               rawBody: { template: '{"image":"{{enlace:tag-file}}"}', tags: { 'tag-file': { id: 'tag-file', type: 'uploaded_file' } } },
             },
           ],
@@ -373,7 +358,6 @@ describe('serializeCollection', () => {
       id: 'g1',
       kind: 'presets',
       credentialId: null,
-      fieldValues: {},
       presets: [
         { id: 's1', kind: 'wait', durationMs: 1000 },
         { id: 's2', kind: 'wait', durationMs: 2000 },
@@ -426,7 +410,6 @@ describe('serializeCollection', () => {
               id: 'g1',
               kind: 'presets',
               credentialId: null,
-              fieldValues: {},
               presets: [{ id: 's1', kind: 'bogus', durationMs: 0 }],
             },
           ],
@@ -447,7 +430,6 @@ describe('serializeCollection', () => {
               id: 'g1',
               kind: 'presets',
               credentialId: null,
-              fieldValues: {},
               presets: [
                 { id: 's1', kind: 'wait', durationMs: 100 },
                 { id: 's1', kind: 'wait', durationMs: 200 },
@@ -646,9 +628,7 @@ describe('hydrateCollection / helpers', () => {
       id: 'n-patch',
       kind: 'operation',
       operationId: 'PATCH /customers/{id}',
-      requestMode: 'raw',
       credentialId: null,
-      fieldValues: {},
       rawPath: { template: '{"id":"c1"}', tags: {} },
       rawQuery: { template: '{"dryRun":true}', tags: {} },
     };
@@ -658,12 +638,36 @@ describe('hydrateCollection / helpers', () => {
       nodePositions: {},
       credentials: [],
     });
-    expect(asOperationNode(doc.workflows[0].nodes[0]).requestMode).toBe('raw');
     expect(asOperationNode(doc.workflows[0].nodes[0]).rawPath).toEqual({ template: '{"id":"c1"}', tags: {} });
     expect(asOperationNode(doc.workflows[0].nodes[0]).rawQuery).toEqual({ template: '{"dryRun":true}', tags: {} });
   });
 
-  it('rejects an operation node with no requestMode', () => {
+  it('round-trips rawHeaders', () => {
+    const withHeaders: WorkflowNode = {
+      id: 'n-patch',
+      kind: 'operation',
+      operationId: 'PATCH /customers/{id}',
+      credentialId: null,
+      rawHeaders: { template: '{"x-trace-id":"abc"}', tags: {} },
+    };
+    const doc = serializeCollection({
+      nodes: [withHeaders],
+      connections: [],
+      nodePositions: {},
+      credentials: [],
+    });
+    expect(asOperationNode(doc.workflows[0].nodes[0]).rawHeaders).toEqual({ template: '{"x-trace-id":"abc"}', tags: {} });
+
+    const parsed = parseCollection(doc);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(asOperationNode(parsed.collection.workflows[0].nodes[0]).rawHeaders).toEqual({
+      template: '{"x-trace-id":"abc"}',
+      tags: {},
+    });
+  });
+
+  it('rejects an operation node with no operationId', () => {
     const result = parseCollection({
       format: ENLACE_COLLECTION_FORMAT,
       version: ENLACE_COLLECTION_VERSION,
@@ -676,45 +680,12 @@ describe('hydrateCollection / helpers', () => {
           id: 'workflow-1',
           name: 'Broken',
           specHint: { operationIds: [] },
-          nodes: [{ id: 'n1', operationId: 'POST /x', credentialId: null, fieldValues: {} }],
+          nodes: [{ id: 'n1', credentialId: null }],
           connections: [],
           nodePositions: {},
         },
       ],
     });
     expect(result.ok).toBe(false);
-  });
-
-  it('round-trips a file FieldValue marker (fileName only — no bytes)', () => {
-    const withFile: WorkflowNode = {
-      id: 'n-product',
-      kind: 'operation',
-      operationId: 'POST /products',
-      requestMode: 'form',
-      credentialId: null,
-      fieldValues: {
-        'body.image': { source: 'file', fileName: 'gadget.png' },
-        'body.name': { source: 'static', value: 'Gadget' },
-      },
-    };
-    const collection = serializeCollection({
-      name: 'Product',
-      nodes: [withFile],
-      connections: [],
-      nodePositions: { 'n-product': { x: 0, y: 0 } },
-      credentials: [],
-    });
-    const serialized = JSON.stringify(collection);
-    expect(serialized).toContain('"source":"file"');
-    expect(serialized).toContain('gadget.png');
-    expect(serialized).not.toContain('Blob');
-
-    const result = parseCollection(collection);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.collection.workflows[0].nodes[0].fieldValues['body.image']).toEqual({
-      source: 'file',
-      fileName: 'gadget.png',
-    });
   });
 });

@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useWorkflowStore } from '../../store/workflowStore.js';
 import { getHeaderCaseInsensitive, resolveJsonPath } from '@get-enlace/core';
 import { randomId } from '../../utils/randomId.js';
-import type { BodyTag, BodyTagType, WorkflowNode } from '../../types.js';
+import { flattenResponseFields } from '../../utils/flattenSchema.js';
+import { operationIdOf } from '../../utils/workflowNode.js';
+import type { BodyTag, BodyTagType, Operation, WorkflowNode } from '../../types.js';
 import { Modal } from '../Modal.js';
 import { TrashIcon, UploadIcon } from '../chromeIcons.js';
 
@@ -20,12 +22,14 @@ const TYPE_LABELS: Record<BodyTagType, string> = {
 const RESPONSE_TAG_TYPES: BodyTagType[] = ['response_body', 'response_raw', 'response_header', 'response_status'];
 
 export interface TagConfigModalProps {
-  /** Reachable-via-connection ancestors of the node being edited — see engine/dependencyGraph.ts's computeAncestors, the same set NodeConfig's form "Map from..." picker already uses. */
+  /** Reachable-via-connection ancestors of the node being edited — see engine/dependencyGraph.ts's computeAncestors. */
   ancestorNodes: WorkflowNode[];
   /** Precomputed by the caller across the *whole* workflow (see utils/nodeLabel.ts's
    * buildNodeLabels) — not just `ancestorNodes` — so an option here always matches what the same
    * node shows on its canvas card and in every other picker. */
   nodeLabels: Map<string, string>;
+  /** Every operation in the spec — looked up by the selected source node's own operationId to power the "Filter (JSONPath)" field's autocomplete (see `responseFields` below). Same list CredentialParamOverrideRow.tsx already threads through for the identical purpose. */
+  operations: Operation[];
   initialType: BodyTagType;
   /** Present when editing an existing chip (opened by clicking it in the editor) rather than inserting a new one. */
   initialTag?: BodyTag;
@@ -47,6 +51,7 @@ export interface TagConfigModalProps {
 export function TagConfigModal({
   ancestorNodes,
   nodeLabels,
+  operations,
   initialType,
   initialTag,
   allowFileUpload = false,
@@ -55,6 +60,7 @@ export function TagConfigModal({
   onCancel,
 }: TagConfigModalProps) {
   const runResult = useWorkflowStore((s) => s.runResult);
+  const jsonPathListId = useId();
   const [type, setType] = useState<BodyTagType>(initialTag?.type ?? initialType);
   // Editing a broken chip whose source node was deleted: `initialTag.sourceNodeId`
   // isn't one of `ancestorNodes` any more, so it can't be the initial value —
@@ -76,6 +82,18 @@ export function TagConfigModal({
   const [jsonPath, setJsonPath] = useState(initialTag?.type === 'response_body' ? (initialTag.jsonPath ?? '') : '');
   const [headerName, setHeaderName] = useState(initialTag?.type === 'response_header' ? initialTag.headerName : '');
   const [file, setFile] = useState<File | null>(null);
+  // Known response field paths for the selected source, offered as an
+  // autocomplete on the "Filter (JSONPath)" input below rather than a hard
+  // dropdown — this is the type-safety net a Raw JSON tag chip has instead
+  // of Form mode's old locked "Map from..." picker: real paths (with their
+  // type) are one keystroke away to pick from, but a path this schema
+  // doesn't know about (a field the spec under-declares, a deeper index
+  // than the picker's own one-level array expansion reaches) can still be
+  // typed by hand. The Live Preview below is the actual ground-truth check
+  // once a chain has run at least once.
+  const sourceNode = ancestorNodes.find((n) => n.id === sourceNodeId);
+  const sourceOperation = operations.find((o) => o.id === operationIdOf(sourceNode));
+  const responseFields = sourceOperation ? flattenResponseFields(sourceOperation) : [];
   const existingFileName = initialTag?.type === 'uploaded_file' ? initialTag.fileName : '';
 
   const canConfirm =
@@ -199,9 +217,22 @@ export function TagConfigModal({
           <input
             type="text"
             placeholder="e.g. $.items[0].id (blank = whole body)"
+            list={jsonPathListId}
             value={jsonPath}
             onChange={(e) => setJsonPath(e.target.value)}
           />
+          {responseFields.length > 0 && (
+            <datalist id={jsonPathListId}>
+              {responseFields
+                .filter((f) => f.supported)
+                .map((f) => (
+                  <option key={f.path} value={f.path}>
+                    {f.path}
+                    {f.type ? ` (${f.type})` : ''}
+                  </option>
+                ))}
+            </datalist>
+          )}
         </label>
       )}
 

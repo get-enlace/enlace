@@ -11,9 +11,7 @@ function makeNode(overrides: Partial<OperationNode> = {}): OperationNode {
     id: 'node-1',
     kind: 'operation',
     operationId: 'POST /pet',
-    requestMode: 'form',
     credentialId: null,
-    fieldValues: {},
     ...overrides,
   };
 }
