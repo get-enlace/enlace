@@ -1,20 +1,40 @@
-import type { Operation, RawBody } from '../types.js';
+import type { Operation, RawBody, RawParamsSection } from '../types.js';
 import { buildSchemaExample } from './schemaExample.js';
 
-export type ParamSection = 'path' | 'query' | 'header';
+function blankField(): RawBody {
+  return { template: '', tags: {} };
+}
+
+function blankFieldMap(names: string[]): Record<string, RawBody> {
+  return Object.fromEntries(names.map((name) => [name, blankField()]));
+}
 
 /**
- * A fresh Raw JSON skeleton for a path/query/header section — every param
- * this operation declares for that section gets a blank string entry, so
- * the editor opens with something to fill in rather than an empty `{}` the
- * user has to reconstruct by hand. `null` when the operation declares no
- * params for this section at all (nothing for NodeConfig.tsx to show).
+ * A fresh set of per-field skeletons for path *and* query params — one
+ * independently-editable `RawBody` per declared name, namespaced under
+ * `paths`/`queries` (see `RawParamsSection`'s own comment in
+ * @get-enlace/core's types.ts for why the two stay separate rather than one
+ * merged map: an operation declaring the same param name in both never
+ * collides). `null` only when the operation declares neither — nothing for
+ * NodeConfig.tsx to show. Otherwise both keys are always present, each
+ * possibly an empty map.
  */
-export function buildDefaultRawParams(section: ParamSection, operation: Operation): RawBody | null {
-  const names = operation.parameters.filter((p) => p.in === section).map((p) => p.name);
-  if (names.length === 0) return null;
-  const target = Object.fromEntries(names.map((name) => [name, '']));
-  return { template: JSON.stringify(target, null, 2), tags: {} };
+export function buildDefaultRawParams(operation: Operation): RawParamsSection | null {
+  const pathNames = operation.parameters.filter((p) => p.in === 'path').map((p) => p.name);
+  const queryNames = operation.parameters.filter((p) => p.in === 'query').map((p) => p.name);
+  if (pathNames.length === 0 && queryNames.length === 0) return null;
+
+  return { paths: blankFieldMap(pathNames), queries: blankFieldMap(queryNames) };
+}
+
+/**
+ * A fresh set of per-field skeletons for the headers section — one blank
+ * `RawBody` per declared header param. `null` when the operation declares
+ * none (nothing for NodeConfig.tsx to show).
+ */
+export function buildDefaultRawHeaders(operation: Operation): Record<string, RawBody> | null {
+  const names = operation.parameters.filter((p) => p.in === 'header').map((p) => p.name);
+  return names.length > 0 ? blankFieldMap(names) : null;
 }
 
 /**

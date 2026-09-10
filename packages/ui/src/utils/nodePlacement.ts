@@ -61,8 +61,26 @@ export function collapsedGroupSize(memberCount: number): { width: number; height
   };
 }
 
-/** Title bar + padding around members when a group is expanded. */
-export const GROUP_FRAME_PAD = 12;
+/** Title bar + padding around members when a group is expanded — top/right/bottom. */
+export const GROUP_FRAME_PAD = 0;
+/**
+ * Left-edge padding specifically — wider than GROUP_FRAME_PAD, which is
+ * enough everywhere else. A connector (BreakpointConnectionEdge.tsx) whose
+ * target sits left of its source (the "loop-back" case: e.g. a group
+ * member dragged left past an upstream neighbor) bows its incoming
+ * handle's control point further left than the card edge itself, by an
+ * amount that grows with how far left of the source the target ends up
+ * (React Flow's own getBezierPath: offset = curvature * 25 * sqrt(-distance)
+ * once distance goes negative) — and that control point only ever bows
+ * further *left*, never right/up/down, so only this one edge needs the
+ * extra room; giving every edge the same pad left visibly excess space on
+ * the sides that never had an overflow problem. Not sized to contain every
+ * possible drag (that would need to track actual edge geometry, not a
+ * constant), just enough that the everyday "dragged one member a bit
+ * further left within its own group" case doesn't poke the curve out past
+ * the frame's own border.
+ */
+export const GROUP_FRAME_PAD_LEFT = 20;
 export const GROUP_TITLE_HEIGHT = 36;
 
 /** Drop-to-group threshold (see Canvas onNodeDragStop). */

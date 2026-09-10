@@ -217,6 +217,11 @@
   color: var(--color-presets);
 }
 
+.cm-rand-expr > span {
+  font-style: italic;
+  color: var(--color-presets);
+}
+
 .tag-chip {
   display: inline-block;
   vertical-align: bottom;
@@ -249,5 +254,58 @@
   background: var(--color-delete-bg);
   color: var(--color-delete);
   border-color: var(--color-delete);
+}
+
+/* --- Per-field path/query/header editor (FieldValueEditor.tsx) — one
+ * label + single-line CodeMirror doc per declared param name. Sibling of
+ * the full multi-line Raw JSON editor above, used only for the request
+ * body now. Typing `{{` inserts a mapped tag chip the same way Body's
+ * editor does — the chip itself is the "this is mapped" indicator, no
+ * separate mode/toggle needed. */
+
+.field-value-editor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+/* Fixed width, not content-sized — a label sized to its own field name
+ * (`id` vs. `x-trace-id`) would start every row's input box at a different
+ * x-offset, which reads as the boxes themselves varying in size even
+ * though they're all just filling the remaining row width. A longer name
+ * truncates with an ellipsis (its full text is still the title attribute)
+ * rather than widening the column. */
+.field-value-editor__label {
+  flex: 0 0 96px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Reuses .raw-body-editor__codemirror's border/dark-background/readonly
+ * treatment (see FieldValueEditor.tsx's className) — this just constrains
+ * it to a single line: no wrapping, horizontal scroll for anything longer
+ * than the box instead of growing taller.
+ */
+.field-value-editor__codemirror {
+  flex: 1;
+  min-width: 0;
+}
+
+.field-value-editor__codemirror .cm-editor {
+  min-height: 26px;
+}
+
+.field-value-editor__codemirror .cm-content {
+  padding: 4px 8px;
+  white-space: pre;
+}
+
+.field-value-editor__codemirror .cm-scroller {
+  overflow-x: auto;
 }
 

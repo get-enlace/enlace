@@ -5,7 +5,8 @@ import { EditorState, Transaction } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { acceptCompletion, completionStatus, currentCompletions } from '@codemirror/autocomplete';
 import { json } from '@codemirror/lang-json';
-import { RawBodyEditor, buildJsonAutocompleteExtensions, buildTagAutoCloneExtension, cloneTagsEffect } from './RawBodyEditor.js';
+import { RawBodyEditor, buildJsonAutocompleteExtensions } from './RawBodyEditor.js';
+import { buildTagAutoCloneExtension, cloneTagsEffect } from './tagChipDecorations.js';
 import { buildNodeLabels } from '@get-enlace/core';
 import type { BodyTag, Operation, RawBody, WorkflowNode } from '../../types.js';
 
@@ -307,8 +308,8 @@ describe('RawBodyEditor', () => {
     // of the field. (The one trap this reopens — typing `{{` inside Raw
     // mode's leftover schema-example placeholder text without clearing it
     // first — is a copy-editing rough edge, not a correctness one:
-    // utils/bodyTags.ts's `resolveTagsInValue` still resolves an embedded
-    // tag correctly at request time regardless of mode.)
+    // engine/rawBodyResolver.ts's `resolveRawBody` still resolves an
+    // embedded tag correctly regardless.)
     const wrapper = document.createElement('div');
     document.body.appendChild(wrapper);
 
@@ -445,6 +446,37 @@ describe('RawBodyEditor', () => {
     // confirm no popup ever opened.
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(completionStatus(view.state)).not.toBe('active');
+
+    view.destroy();
+    wrapper.remove();
+  });
+
+  it('has line-number and fold gutters by default', () => {
+    const wrapper = document.createElement('div');
+    document.body.appendChild(wrapper);
+    const view = new EditorView({
+      state: EditorState.create({ doc: '{"a":1}', extensions: buildJsonAutocompleteExtensions(() => {}) }),
+      parent: wrapper,
+    });
+
+    expect(wrapper.querySelector('.cm-lineNumbers')).toBeTruthy();
+    expect(wrapper.querySelector('.cm-foldGutter')).toBeTruthy();
+
+    view.destroy();
+    wrapper.remove();
+  });
+
+  it('drops the line-number and fold gutters when compact is set (path/query/header — see NodeConfig.tsx)', () => {
+    const wrapper = document.createElement('div');
+    document.body.appendChild(wrapper);
+    const view = new EditorView({
+      state: EditorState.create({ doc: '{"a":1}', extensions: buildJsonAutocompleteExtensions(() => {}, false, false, true) }),
+      parent: wrapper,
+    });
+
+    expect(wrapper.querySelector('.cm-gutters')).toBeFalsy();
+    expect(wrapper.querySelector('.cm-lineNumbers')).toBeFalsy();
+    expect(wrapper.querySelector('.cm-foldGutter')).toBeFalsy();
 
     view.destroy();
     wrapper.remove();

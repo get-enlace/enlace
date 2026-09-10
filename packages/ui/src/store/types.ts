@@ -9,6 +9,7 @@ import type {
   NodeGroup,
   Operation,
   RawBody,
+  RawParamsSection,
   RunControl,
   RunResult,
   RunStepRequest,
@@ -272,9 +273,10 @@ export interface WorkflowState {
    * `uploadedFiles`, keyed via `rawFileTagFieldPath`.
    */
   setUploadedFile: (nodeId: string, fieldPath: string, file: File | null) => void;
-  setRawPath: (nodeId: string, rawPath: RawBody | null) => void;
-  setRawQuery: (nodeId: string, rawQuery: RawBody | null) => void;
-  setRawHeaders: (nodeId: string, rawHeaders: RawBody | null) => void;
+  /** Replaces one path/query param field in place — one independent `RawBody` per declared name, see `RawParamsSection` in @get-enlace/core's types.ts. No-op if the node has no `rawParams` section at all. */
+  setRawParamField: (nodeId: string, bucket: keyof RawParamsSection, key: string, value: RawBody) => void;
+  /** Replaces one header field in place — same per-field shape as `setRawParamField`. No-op if the node has no `rawHeaders` section at all. */
+  setRawHeaderField: (nodeId: string, key: string, value: RawBody) => void;
   setRawBody: (nodeId: string, rawBody: RawBody | null) => void;
   /** Establishes execution ORDER only — separate from field mapping (data source). */
   connectNodes: (fromNodeId: string, toNodeId: string) => void;

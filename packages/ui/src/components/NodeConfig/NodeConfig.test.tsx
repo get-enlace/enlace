@@ -60,7 +60,7 @@ const getPetOperation: Operation = {
   responseSchema: petOperation.responseSchema,
 };
 
-// Every section is Raw JSON only now — a node's own rawPath/rawQuery/
+// Every section is Raw JSON only now — a node's own rawParams/
 // rawHeaders/rawBody being non-null (not the operation's schema) is what
 // decides whether NodeConfig.tsx renders that section at all, so tests that
 // care about a specific section pass it in directly rather than relying on
@@ -267,13 +267,12 @@ describe('NodeConfig', () => {
   });
 
   describe('Request sections', () => {
-    it('renders a heading + Raw JSON editor per section the node actually has, and omits the rest', () => {
+    it('renders a heading + one field editor per declared path/query/header param, plus one Raw JSON editor for the body', () => {
       useWorkflowStore.setState({
         nodes: [
           makeNode({
-            rawPath: { template: '{"id":""}', tags: {} },
-            rawQuery: { template: '{"limit":""}', tags: {} },
-            rawHeaders: { template: '{"x-trace-id":""}', tags: {} },
+            rawParams: { paths: { id: { template: '', tags: {} } }, queries: { limit: { template: '', tags: {} } } },
+            rawHeaders: { 'x-trace-id': { template: '', tags: {} } },
             rawBody: { template: '{"name":""}', tags: {} },
           }),
         ],
@@ -282,12 +281,18 @@ describe('NodeConfig', () => {
       render(<NodeConfig />);
 
       expect(screen.getByRole('heading', { name: 'Request' })).toBeInTheDocument();
-      expect(screen.getByRole('heading', { name: 'Path variables' })).toBeInTheDocument();
+      // Path and query params are their own sections again now that each
+      // param is a single inline row (label + input) rather than a shared
+      // JSON blob — the visual-bulk problem that motivated merging them
+      // doesn't apply once there's nothing to merge.
+      expect(screen.getByRole('heading', { name: 'Path params' })).toBeInTheDocument();
       expect(screen.getByRole('heading', { name: 'Query params' })).toBeInTheDocument();
       expect(screen.getByRole('heading', { name: 'Headers' })).toBeInTheDocument();
       expect(screen.getByRole('heading', { name: 'Body' })).toBeInTheDocument();
-      // One CodeMirror editor per rendered section.
-      expect(document.querySelectorAll('.raw-body-editor')).toHaveLength(4);
+      // One single-line field editor per declared path/query/header param (id, limit, x-trace-id).
+      expect(document.querySelectorAll('.field-value-editor')).toHaveLength(3);
+      // Body alone still gets the full multi-line Raw JSON editor.
+      expect(document.querySelectorAll('.raw-body-editor')).toHaveLength(1);
     });
 
     it('omits a section entirely when the node has none of it (e.g. no path/query/header params declared)', () => {
@@ -298,7 +303,7 @@ describe('NodeConfig', () => {
       render(<NodeConfig />);
 
       expect(screen.getByRole('heading', { name: 'Body' })).toBeInTheDocument();
-      expect(screen.queryByRole('heading', { name: 'Path variables' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Path params' })).not.toBeInTheDocument();
       expect(screen.queryByRole('heading', { name: 'Query params' })).not.toBeInTheDocument();
       expect(screen.queryByRole('heading', { name: 'Headers' })).not.toBeInTheDocument();
       expect(document.querySelectorAll('.raw-body-editor')).toHaveLength(1);
@@ -313,6 +318,18 @@ describe('NodeConfig', () => {
 
       expect(screen.getByRole('heading', { name: 'Request' })).toBeInTheDocument();
       expect(document.querySelectorAll('.raw-body-editor')).toHaveLength(0);
+    });
+
+    it('renders only the "Path params" section for a node with a path param and no query params, not an empty "Query params" section', () => {
+      useWorkflowStore.setState({
+        nodes: [makeNode({ rawParams: { paths: { id: { template: '', tags: {} } }, queries: {} } })], // path only, no query
+        selectedNodeId: 'node-1',
+      });
+      render(<NodeConfig />);
+
+      expect(screen.getByRole('heading', { name: 'Path params' })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Query params' })).not.toBeInTheDocument();
+      expect(document.querySelectorAll('.field-value-editor')).toHaveLength(1);
     });
   });
 

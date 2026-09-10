@@ -2,6 +2,7 @@ import type { NodeGroup } from '../types.js';
 import {
   collapsedGroupSize,
   GROUP_FRAME_PAD,
+  GROUP_FRAME_PAD_LEFT,
   GROUP_OVERLAP_THRESHOLD,
   GROUP_TITLE_HEIGHT,
   NODE_CARD_GAP,
@@ -46,7 +47,11 @@ export function memberBounds(
   return { minX, minY, maxX, maxY };
 }
 
-/** Expanded frame origin + size wrapping the given members. */
+/**
+ * Expanded frame origin + size wrapping the given members. Left edge gets
+ * its own, wider pad (GROUP_FRAME_PAD_LEFT) — see that constant's own
+ * comment for why only the left side needs it.
+ */
 export function expandedGroupFrame(
   nodeIds: string[],
   positions: Record<string, Position>
@@ -55,10 +60,10 @@ export function expandedGroupFrame(
   if (!bounds) return null;
   return {
     position: {
-      x: bounds.minX - GROUP_FRAME_PAD,
+      x: bounds.minX - GROUP_FRAME_PAD_LEFT,
       y: bounds.minY - GROUP_TITLE_HEIGHT - GROUP_FRAME_PAD,
     },
-    width: bounds.maxX - bounds.minX + GROUP_FRAME_PAD * 2,
+    width: bounds.maxX - bounds.minX + GROUP_FRAME_PAD_LEFT + GROUP_FRAME_PAD,
     height: bounds.maxY - bounds.minY + GROUP_TITLE_HEIGHT + GROUP_FRAME_PAD * 2,
   };
 }

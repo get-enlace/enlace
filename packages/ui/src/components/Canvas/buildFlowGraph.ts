@@ -22,8 +22,16 @@ import type { PresetsNodeData } from './PresetsNodeCard.js';
 function mappedSourceNodeIds(node: WorkflowNode): string[] {
   if (node.kind !== 'operation') return [];
   const ids: string[] = [];
-  for (const raw of [node.rawPath, node.rawQuery, node.rawHeaders, node.rawBody]) {
-    if (!raw) continue;
+  // rawParams/rawHeaders are now one RawBody per field (see OperationNode's
+  // own comments in types.ts) rather than one shared section — flatten
+  // every field's tags alongside rawBody's own single section.
+  const sections = [
+    ...Object.values(node.rawParams?.paths ?? {}),
+    ...Object.values(node.rawParams?.queries ?? {}),
+    ...Object.values(node.rawHeaders ?? {}),
+    ...(node.rawBody ? [node.rawBody] : []),
+  ];
+  for (const raw of sections) {
     for (const tag of Object.values(raw.tags)) {
       if (tag.type !== 'uploaded_file') ids.push(tag.sourceNodeId);
     }
@@ -113,6 +121,20 @@ export function buildFlowNodes(args: {
         type: 'nodeGroup',
         position: frame.position,
         zIndex: 0,
+        // React Flow gives every node wrapper `pointer-events: all` as an
+        // *inline* style (unconditionally, in its own NodeWrapper source) —
+        // no external stylesheet rule, however specific, can win against
+        // that short of `!important`. This node's box is the entire
+        // expanded frame, not just its visible titlebar/border, so left
+        // alone it silently ate every click landing in the empty space
+        // between member cards — including a connector edge routed through
+        // there, which is what this actually fixes. `style` is React
+        // Flow's own supported per-node override (spread in after its
+        // internal pointerEvents in that same style object), the sanctioned
+        // way to beat it. `.node-group__titlebar` (GroupNodeCard.tsx) still
+        // opts itself back in via styles/canvas.css, same as before — this
+        // only changes where the default gets set.
+        style: { pointerEvents: 'none' },
         data: {
           group: { ...g, position: frame.position },
           width: frame.width,

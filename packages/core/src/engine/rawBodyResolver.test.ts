@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveRawBody } from './rawBodyResolver.js';
+import { resolveRawBody, resolveRawScalar } from './rawBodyResolver.js';
 import type { BodyTag, BodyTagType, RawBody, RunStep } from '../types.js';
 
 function step(nodeId: string, response?: RunStep['response']): RunStep {
@@ -189,5 +189,53 @@ describe('resolveRawBody', () => {
         /must be its field's entire value/
       );
     });
+  });
+});
+
+describe('resolveRawScalar', () => {
+  it('returns plain literal text untouched when the field has no tag at all', () => {
+    const rawBody: RawBody = { template: 'cust-42', tags: {} };
+    expect(resolveRawScalar(rawBody, new Map())).toBe('cust-42');
+  });
+
+  it('returns an empty field as an empty string, not omitted', () => {
+    const rawBody: RawBody = { template: '', tags: {} };
+    expect(resolveRawScalar(rawBody, new Map())).toBe('');
+  });
+
+  it('resolves a whole-field tag to its real type, unchanged (e.g. a number stays a number)', () => {
+    const stepsByNodeId = new Map([['node-a', step('node-a', { status: 200, headers: {}, body: { count: 5 } })]]);
+    const rawBody: RawBody = {
+      template: '{{enlace:tag1}}',
+      tags: { tag1: bodyTag({ type: 'response_body', sourceNodeId: 'node-a', jsonPath: 'count' }) },
+    };
+    expect(resolveRawScalar(rawBody, stepsByNodeId)).toBe(5);
+  });
+
+  it('splices a tag embedded in surrounding literal text as a plain string, no JSON escaping', () => {
+    const stepsByNodeId = new Map([['node-a', step('node-a', { status: 200, headers: {}, body: { token: 'abc "quoted"' } })]]);
+    const rawBody: RawBody = {
+      template: 'Bearer {{enlace:tag1}}',
+      tags: { tag1: bodyTag({ type: 'response_body', sourceNodeId: 'node-a', jsonPath: 'token' }) },
+    };
+    expect(resolveRawScalar(rawBody, stepsByNodeId)).toBe('Bearer abc "quoted"');
+  });
+
+  it('throws for an unrecognized tag id', () => {
+    const rawBody: RawBody = { template: '{{enlace:missing}}', tags: {} };
+    expect(() => resolveRawScalar(rawBody, new Map())).toThrow(/unknown tag/);
+  });
+
+  it('throws for an uploaded_file tag — never valid outside a multipart body', () => {
+    const rawBody: RawBody = { template: '{{enlace:tag1}}', tags: { tag1: fileTag({ fileName: 'photo.png' }) } };
+    expect(() => resolveRawScalar(rawBody, new Map())).toThrow(/only valid in the body of a multipart/);
+  });
+
+  it('throws the same "no captured response yet" error resolveRawBody does', () => {
+    const rawBody: RawBody = {
+      template: '{{enlace:tag1}}',
+      tags: { tag1: bodyTag({ type: 'response_body', sourceNodeId: 'node-a' }) },
+    };
+    expect(() => resolveRawScalar(rawBody, new Map())).toThrow(/no captured response yet/);
   });
 });

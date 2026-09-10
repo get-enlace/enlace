@@ -3,6 +3,7 @@ import { useWorkflowStore } from '../../store/workflowStore.js';
 import { buildNodeLabels, computeAncestors, listRandomMethodNames, rawFileTagFieldPath } from '@get-enlace/core';
 import { operationIdOf } from '../../utils/workflowNode.js';
 import { RawBodyEditor } from './RawBodyEditor.js';
+import { FieldValueEditor } from './FieldValueEditor.js';
 import { NodeConfigHeader } from './NodeConfigHeader.js';
 import { CredentialParamOverrideRow } from './CredentialParamOverrideRow.js';
 import { PresetsConfig } from './PresetsConfig.js';
@@ -20,9 +21,8 @@ export function NodeConfig() {
     setCredentialExtraParamOverride,
     setCredentialExtraParamOverridesEnabled,
     setUploadedFile,
-    setRawPath,
-    setRawQuery,
-    setRawHeaders,
+    setRawParamField,
+    setRawHeaderField,
     setRawBody,
     setPresetDurationMs,
     addAssertCheck,
@@ -152,51 +152,57 @@ export function NodeConfig() {
 
         <h3>Request</h3>
 
-        {node.rawPath && (
+        {node.rawParams && Object.keys(node.rawParams.paths).length > 0 && (
           <section className="node-config__section">
-            <h4 className="node-config__section-title">Path variables</h4>
-            <RawBodyEditor
-              key={node.id}
-              rawBody={node.rawPath}
-              onChange={(rawPath) => setRawPath(node.id, rawPath)}
-              ancestorNodes={ancestorNodes}
-              nodeLabels={nodeLabels}
-              operations={operations}
-              readOnly={isRunning}
-              showHint={false}
-            />
+            <h4 className="node-config__section-title">Path params</h4>
+            {Object.entries(node.rawParams.paths).map(([key, field]) => (
+              <FieldValueEditor
+                key={`${node.id}:path:${key}`}
+                label={key}
+                value={field}
+                onChange={(next) => setRawParamField(node.id, 'paths', key, next)}
+                ancestorNodes={ancestorNodes}
+                nodeLabels={nodeLabels}
+                operations={operations}
+                readOnly={isRunning}
+              />
+            ))}
           </section>
         )}
 
-        {node.rawQuery && (
+        {node.rawParams && Object.keys(node.rawParams.queries).length > 0 && (
           <section className="node-config__section">
             <h4 className="node-config__section-title">Query params</h4>
-            <RawBodyEditor
-              key={node.id}
-              rawBody={node.rawQuery}
-              onChange={(rawQuery) => setRawQuery(node.id, rawQuery)}
-              ancestorNodes={ancestorNodes}
-              nodeLabels={nodeLabels}
-              operations={operations}
-              readOnly={isRunning}
-              showHint={false}
-            />
+            {Object.entries(node.rawParams.queries).map(([key, field]) => (
+              <FieldValueEditor
+                key={`${node.id}:query:${key}`}
+                label={key}
+                value={field}
+                onChange={(next) => setRawParamField(node.id, 'queries', key, next)}
+                ancestorNodes={ancestorNodes}
+                nodeLabels={nodeLabels}
+                operations={operations}
+                readOnly={isRunning}
+              />
+            ))}
           </section>
         )}
 
         {node.rawHeaders && (
           <section className="node-config__section">
             <h4 className="node-config__section-title">Headers</h4>
-            <RawBodyEditor
-              key={node.id}
-              rawBody={node.rawHeaders}
-              onChange={(rawHeaders) => setRawHeaders(node.id, rawHeaders)}
-              ancestorNodes={ancestorNodes}
-              nodeLabels={nodeLabels}
-              operations={operations}
-              readOnly={isRunning}
-              showHint={false}
-            />
+            {Object.entries(node.rawHeaders).map(([key, field]) => (
+              <FieldValueEditor
+                key={`${node.id}:header:${key}`}
+                label={key}
+                value={field}
+                onChange={(next) => setRawHeaderField(node.id, key, next)}
+                ancestorNodes={ancestorNodes}
+                nodeLabels={nodeLabels}
+                operations={operations}
+                readOnly={isRunning}
+              />
+            ))}
           </section>
         )}
 

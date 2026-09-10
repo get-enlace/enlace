@@ -16,8 +16,16 @@ function rawBodyWithTag(sourceNodeId: string): RawBody {
 describe('buildFlowEdges', () => {
   it('draws an animated mapping edge for a tag chip in any raw section, not just the body', () => {
     const a = opNode('a');
-    for (const section of ['rawPath', 'rawQuery', 'rawHeaders', 'rawBody'] as const) {
-      const b = opNode('b', { [section]: rawBodyWithTag('a') });
+    // rawParams/rawHeaders are now one RawBody per field rather than one
+    // shared section (see OperationNode's own comments in types.ts) — each
+    // variant here puts the same mapped tag in a different field shape.
+    const sectionOverrides: Array<Partial<OperationNode>> = [
+      { rawParams: { paths: { id: rawBodyWithTag('a') }, queries: {} } },
+      { rawHeaders: { 'x-trace-id': rawBodyWithTag('a') } },
+      { rawBody: rawBodyWithTag('a') },
+    ];
+    for (const overrides of sectionOverrides) {
+      const b = opNode('b', overrides);
       const edges = buildFlowEdges({
         nodes: [a, b],
         connections: [],
@@ -34,7 +42,10 @@ describe('buildFlowEdges', () => {
 
   it('draws one edge per tag, even when multiple sections map from the same ancestor', () => {
     const a = opNode('a');
-    const b = opNode('b', { rawPath: rawBodyWithTag('a'), rawBody: rawBodyWithTag('a') });
+    const b = opNode('b', {
+      rawParams: { paths: { id: rawBodyWithTag('a') }, queries: {} },
+      rawBody: rawBodyWithTag('a'),
+    });
     const edges = buildFlowEdges({
       nodes: [a, b],
       connections: [],

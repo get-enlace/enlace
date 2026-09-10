@@ -67,6 +67,17 @@ export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
           a border (see styles/canvas.css's workflow-node--{in-flight,paused,failed}). */}
       <fieldset
         className={`workflow-node${selected ? ' workflow-node--selected' : ''}${status ? ` workflow-node--${status}` : ''}${groupId ? ' workflow-node--grouped' : ''}`}
+        // One hover hint for the whole card, not one per element (the path
+        // span used to carry its own `title={path}` — hovering the path
+        // repeated text already visible, while hovering anywhere else on the
+        // card showed nothing/something else, which read as inconsistent).
+        // Full path first (recovers the untruncated text when the visible
+        // line is CSS-ellipsized), then the operation's own description —
+        // the same info the always-visible summary line used to show,
+        // before it moved to a hover hint. The × buttons and the Handles
+        // still carry their own, more specific titles, which win on hover
+        // over exactly those small targets.
+        title={[operation?.path, operation?.summary].filter(Boolean).join('\n')}
       >
         {showLegend && <legend className="workflow-node__operation-id">{label}</legend>}
         {badgeGlyph && (
@@ -81,15 +92,8 @@ export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
         <Handle type="target" position={Position.Left} title="Drop here to connect" />
         <div className="workflow-node__header">
           <span className={`method-badge method-badge--${method}`}>{method.toUpperCase()}</span>
-          <span className="workflow-node__path" title={operation?.path ?? 'Unknown operation'}>
-            {operation?.path ?? 'Unknown operation'}
-          </span>
+          <span className="workflow-node__path">{operation?.path ?? 'Unknown operation'}</span>
         </div>
-        {operation?.summary && (
-          <div className="workflow-node__summary" title={operation.summary}>
-            {operation.summary}
-          </div>
-        )}
         {/* Point-of-truth for "why hasn't this fired" without needing the
             Debugger tab open — the corner badge alone reads as "something's
             up" at a glance across a busy canvas, this line says what. */}

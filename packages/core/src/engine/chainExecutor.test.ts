@@ -146,16 +146,21 @@ describe('executeChain', () => {
       operationId: 'POST /orders',
       credentialId: null,
       rawBody: { template: '{"item":"Widget"}', tags: {} },
-      rawHeaders: { template: '{"x-trace-id":"abc123"}', tags: {} },
+      rawHeaders: { 'x-trace-id': { template: 'abc123', tags: {} } },
     };
     const n2: WorkflowNode = {
       id: 'n2',
       kind: 'operation',
       operationId: 'GET /orders/{id}',
       credentialId: null,
-      rawPath: {
-        template: '{"id":"{{enlace:tag1}}"}',
-        tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: 'n1', jsonPath: 'id' } },
+      rawParams: {
+        paths: {
+          id: {
+            template: '{{enlace:tag1}}',
+            tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: 'n1', jsonPath: 'id' } },
+          },
+        },
+        queries: {},
       },
     };
     // A raw tag chip's source must already be an explicit-connection
@@ -835,7 +840,7 @@ describe('executeChain', () => {
     expect(JSON.parse(orderInit.body)).toEqual({ note: 'strcust-1' });
   });
 
-  it('substitutes path and query from rawPath/rawQuery', async () => {
+  it('substitutes path and query params from independent per-field rawParams entries, paths/queries namespaced separately', async () => {
     const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, { ok: true }));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -857,8 +862,10 @@ describe('executeChain', () => {
       kind: 'operation',
       operationId: 'PATCH /customers/{id}',
       credentialId: null,
-      rawPath: { template: JSON.stringify({ id: 'cust-9' }), tags: {} },
-      rawQuery: { template: JSON.stringify({ dryRun: true }), tags: {} },
+      rawParams: {
+        paths: { id: { template: 'cust-9', tags: {} } },
+        queries: { dryRun: { template: 'true', tags: {} } },
+      },
       rawBody: { template: JSON.stringify({ name: 'Ada' }), tags: {} },
     };
 
@@ -1392,9 +1399,14 @@ describe('executeChain — presets nodes', () => {
       kind: 'operation',
       operationId: 'a',
       credentialId: null,
-      rawQuery: {
-        template: '{"x":"{{enlace:tag1}}"}',
-        tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: 'g', jsonPath: 'id' } },
+      rawParams: {
+        paths: {},
+        queries: {
+          x: {
+            template: '{{enlace:tag1}}',
+            tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: 'g', jsonPath: 'id' } },
+          },
+        },
       },
     };
     const connections: WorkflowConnection[] = [{ fromNodeId: 'g', toNodeId: 'a' }];

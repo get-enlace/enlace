@@ -13,6 +13,7 @@ import type {
   NodeGroup,
   Operation,
   RawBody,
+  RawParamsSection,
   WorkflowConnection,
   WorkflowNode,
 } from '../types.js';
@@ -352,9 +353,10 @@ function serializeNode(node: WorkflowNode): WorkflowNode {
     operationId: node.operationId,
     credentialId: node.credentialId ?? null,
   };
-  if (node.rawPath) out.rawPath = cloneRawBody(node.rawPath);
-  if (node.rawQuery) out.rawQuery = cloneRawBody(node.rawQuery);
-  if (node.rawHeaders) out.rawHeaders = cloneRawBody(node.rawHeaders);
+  if (node.rawParams) {
+    out.rawParams = { paths: cloneRawFieldMap(node.rawParams.paths), queries: cloneRawFieldMap(node.rawParams.queries) };
+  }
+  if (node.rawHeaders) out.rawHeaders = cloneRawFieldMap(node.rawHeaders);
   if (node.rawBody) out.rawBody = cloneRawBody(node.rawBody);
   return out;
 }
@@ -531,19 +533,66 @@ function parseNode(raw: unknown, index: number): WorkflowNode | string {
     credentialId: typeof raw.credentialId === 'string' ? raw.credentialId : null,
   };
 
-  // `requestMode`/`fieldValues` may still be present in an older export
-  // (from before Form mode was dropped) — silently ignored rather than
-  // rejected outright, same forward-tolerant spirit as any other stray key;
-  // an old file's static/mapped values just don't carry over (no migration
-  // path, since nothing had shipped to real users while Form mode existed).
-  for (const key of ['rawPath', 'rawQuery', 'rawHeaders', 'rawBody'] as const) {
-    if (raw[key] != null) {
-      const parsed = parseRawBody(raw[key], raw.id, key);
-      if (typeof parsed === 'string') return parsed;
-      node[key] = parsed;
-    }
+  // `requestMode`/`fieldValues` (pre-dating Form mode's removal) and
+  // `rawPath`/`rawQuery` (pre-dating their merge into one `rawParams`
+  // section) may still be present in an older export — silently ignored
+  // rather than rejected outright, same forward-tolerant spirit as any
+  // other stray key; an old file's path/query values just don't carry
+  // over (no migration path, since nothing had shipped to real users at
+  // either point). `rawParams`/`rawHeaders` themselves also changed shape
+  // within this same key name (one shared RawBody per section -> one
+  // RawBody per field, see OperationNode's own comments in types.ts) — an
+  // export from just before that change isn't a record shaped like the new
+  // format at all, so `parseRawParamsSection`/`parseRawFieldMap` below
+  // silently skip it (same "just don't carry over" spirit) rather than
+  // erroring the whole import over stale internal shape.
+  if (raw.rawParams != null) {
+    const parsed = parseRawParamsSection(raw.rawParams, raw.id);
+    if (typeof parsed === 'string') return parsed;
+    if (parsed) node.rawParams = parsed;
+  }
+  if (raw.rawHeaders != null) {
+    const parsed = parseRawFieldMap(raw.rawHeaders, raw.id, 'rawHeaders');
+    if (typeof parsed === 'string') return parsed;
+    if (parsed) node.rawHeaders = parsed;
+  }
+  if (raw.rawBody != null) {
+    const parsed = parseRawBody(raw.rawBody, raw.id, 'rawBody');
+    if (typeof parsed === 'string') return parsed;
+    node.rawBody = parsed;
   }
   return node;
+}
+
+/**
+ * One `RawBody` per field name (`rawHeaders`, and each of `rawParams`'
+ * `paths`/`queries` sub-maps) — `null` (not a hard error) when `raw` isn't
+ * even a record, since that's what an export from just before the
+ * one-shared-section -> one-per-field shape change would look like (see
+ * `parseNode`'s own comment); a record that *is* present but has malformed
+ * entries still errors, same as any other genuine corruption.
+ */
+function parseRawFieldMap(raw: unknown, nodeId: string, sectionName: string): Record<string, RawBody> | string | null {
+  if (!isRecord(raw)) return null;
+  const out: Record<string, RawBody> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (isUnsafeKey(key)) {
+      return `Enlace collection node "${nodeId}" has an invalid ${sectionName} field name "${key}".`;
+    }
+    const parsed = parseRawBody(value, nodeId, `${sectionName}.${key}`);
+    if (typeof parsed === 'string') return parsed;
+    out[key] = parsed;
+  }
+  return out;
+}
+
+function parseRawParamsSection(raw: unknown, nodeId: string): RawParamsSection | string | null {
+  if (!isRecord(raw)) return null;
+  const paths = parseRawFieldMap(raw.paths ?? {}, nodeId, 'rawParams.paths');
+  if (typeof paths === 'string') return paths;
+  const queries = parseRawFieldMap(raw.queries ?? {}, nodeId, 'rawParams.queries');
+  if (typeof queries === 'string') return queries;
+  return { paths: paths ?? {}, queries: queries ?? {} };
 }
 
 function parseAssertChecks(raw: unknown, presetsNodeId: string, presetId: string): AssertCheck[] | string {
@@ -908,6 +957,10 @@ function cloneRawBody(rawBody: RawBody): RawBody {
     template: rawBody.template,
     tags: Object.fromEntries(Object.entries(rawBody.tags).map(([id, tag]) => [id, { ...tag }])),
   };
+}
+
+function cloneRawFieldMap(fields: Record<string, RawBody>): Record<string, RawBody> {
+  return Object.fromEntries(Object.entries(fields).map(([key, rawBody]) => [key, cloneRawBody(rawBody)]));
 }
 
 /**
