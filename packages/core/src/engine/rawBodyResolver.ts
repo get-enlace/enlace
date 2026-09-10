@@ -134,3 +134,59 @@ export function resolveRawBody(
   const parsed = JSON.parse(result);
   return fileLookup ? swapFileSentinels(parsed, rawBody.tags, fileLookup) : parsed;
 }
+
+/**
+ * Execution-time resolution of one path/query/header *field*'s `RawBody` —
+ * the per-field sibling of `resolveRawBody` above, for
+ * `OperationNode.rawParams`/`rawHeaders` (see `RawBody`'s own doc in
+ * types.ts for why these carry plain scalar text rather than JSON). No
+ * surrounding quotes to consume and no final `JSON.parse` — a field is
+ * never a JSON document, just a string with zero or more tag chips spliced
+ * in.
+ *
+ * A template that's *entirely* one tag placeholder resolves to that tag's
+ * real value, unchanged type — e.g. mapping a numeric id keeps it a number
+ * until the caller (path/query/header substitution in
+ * operationNodeHandler.ts) stringifies it. A placeholder mixed with literal
+ * text (`"Bearer {{enlace:<id>}}"`, typed by hand around an inserted chip)
+ * instead splices each resolved value in as plain text (`String(value)` —
+ * no JSON escaping, since this is never parsed back as JSON).
+ *
+ * `uploaded_file` never reaches here — that tag type only ever makes sense
+ * in a multipart body (see `resolveRawBody`'s own doc), and
+ * FieldValueEditor.tsx never offers "Upload file" as an option for a
+ * path/query/header field — so encountering one is a real bug, not a
+ * reachable user state, and throws same as an unknown tag id would.
+ *
+ * Throws under the same conditions `resolveRawBody` does (unknown tag,
+ * source node with no captured response yet, missing header) — caught by
+ * the same buildRequest try/catch.
+ */
+export function resolveRawScalar(rawBody: RawBody, stepsByNodeId: Map<string, RunStep>, nodeLabels?: Map<string, string>): unknown {
+  const text = resolveRandomExpressionsInRawText(rawBody.template);
+  const matches = [...text.matchAll(tagPattern())];
+  if (matches.length === 0) return text;
+
+  function resolve(match: RegExpMatchArray): unknown {
+    const tagId = match[1];
+    const tag = rawBody.tags[tagId];
+    if (!tag) throw new Error(`Field references unknown tag "${tagId}".`);
+    if (tag.type === 'uploaded_file') {
+      throw new Error('A file attachment is only valid in the body of a multipart/form-data request.');
+    }
+    return resolveTagValue(tag, stepsByNodeId, nodeLabels);
+  }
+
+  const whole = matches.length === 1 && matches[0].index === 0 && matches[0][0].length === text.length;
+  if (whole) return resolve(matches[0]);
+
+  let result = '';
+  let lastIndex = 0;
+  for (const match of matches) {
+    const start = match.index ?? 0;
+    const end = start + match[0].length;
+    result += text.slice(lastIndex, start) + String(resolve(match));
+    lastIndex = end;
+  }
+  return result + text.slice(lastIndex);
+}

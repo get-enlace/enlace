@@ -3,8 +3,8 @@ import { connectionKey } from '@get-enlace/core';
 import { findOpenPosition } from '../../utils/nodePlacement.js';
 import { expandedGroupFrame, sortGroupMemberIds } from '../../utils/groupGeometry.js';
 import { randomId } from '../../utils/randomId.js';
-import { buildDefaultRawBody, buildDefaultRawParams } from '../../utils/rawDefaults.js';
-import type { AssertCheck, FieldValue, NewPreset, Preset, NodeGroup, RawBody, WorkflowConnection, WorkflowNode } from '../../types.js';
+import { buildDefaultRawBody, buildDefaultRawHeaders, buildDefaultRawParams } from '../../utils/rawDefaults.js';
+import type { AssertCheck, FieldValue, NewPreset, Preset, NodeGroup, RawBody, RawParamsSection, WorkflowConnection, WorkflowNode } from '../../types.js';
 import {
   defaultPosition,
   isLocked,
@@ -65,9 +65,10 @@ export interface GraphSlice {
   setCredentialExtraParamOverride: (nodeId: string, key: string, value: FieldValue | null) => void;
   setCredentialExtraParamOverridesEnabled: (nodeId: string, enabled: boolean) => void;
   setUploadedFile: (nodeId: string, fieldPath: string, file: File | null) => void;
-  setRawPath: (nodeId: string, rawPath: RawBody | null) => void;
-  setRawQuery: (nodeId: string, rawQuery: RawBody | null) => void;
-  setRawHeaders: (nodeId: string, rawHeaders: RawBody | null) => void;
+  /** Replaces one path/query param field in place — no-op if the node has no `rawParams` section (or that bucket) at all. */
+  setRawParamField: (nodeId: string, bucket: keyof RawParamsSection, key: string, value: RawBody) => void;
+  /** Replaces one header field in place — no-op if the node has no `rawHeaders` section at all. */
+  setRawHeaderField: (nodeId: string, key: string, value: RawBody) => void;
   setRawBody: (nodeId: string, rawBody: RawBody | null) => void;
   connectNodes: (fromNodeId: string, toNodeId: string) => void;
   disconnectNodes: (fromNodeId: string, toNodeId: string) => void;
@@ -113,9 +114,8 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
       kind: 'operation',
       operationId,
       credentialId: null,
-      rawPath: operation ? buildDefaultRawParams('path', operation) : null,
-      rawQuery: operation ? buildDefaultRawParams('query', operation) : null,
-      rawHeaders: operation ? buildDefaultRawParams('header', operation) : null,
+      rawParams: operation ? buildDefaultRawParams(operation) : null,
+      rawHeaders: operation ? buildDefaultRawHeaders(operation) : null,
       rawBody: operation ? buildDefaultRawBody(operation) : null,
     };
     set((state) => {
@@ -417,27 +417,34 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
       return { uploadedFiles };
     }),
 
-  setRawPath: (nodeId, rawPath) =>
+  // `n.rawParams`/`n.rawHeaders` being null (the operation declares no
+  // path/query/header params at all) doesn't block this — NodeConfig.tsx
+  // only ever renders a FieldValueEditor when the section already exists,
+  // so a null section here would only happen from a test or a future
+  // caller setting a field before the section exists; starting from an
+  // empty `{paths:{},queries:{}}`/`{}` rather than no-op'ing keeps this
+  // setter usable either way, same permissiveness the old whole-section
+  // `setRawParams`/`setRawHeaders` had.
+  setRawParamField: (nodeId, bucket, key, value) =>
     set((state) => {
       if (isLocked(state)) return state;
       return {
-        nodes: state.nodes.map((n) => (n.id === nodeId && n.kind !== 'presets' ? { ...n, rawPath } : n)),
+        nodes: state.nodes.map((n) => {
+          if (n.id !== nodeId || n.kind === 'presets') return n;
+          const rawParams = n.rawParams ?? { paths: {}, queries: {} };
+          return { ...n, rawParams: { ...rawParams, [bucket]: { ...rawParams[bucket], [key]: value } } };
+        }),
       };
     }),
 
-  setRawQuery: (nodeId, rawQuery) =>
+  setRawHeaderField: (nodeId, key, value) =>
     set((state) => {
       if (isLocked(state)) return state;
       return {
-        nodes: state.nodes.map((n) => (n.id === nodeId && n.kind !== 'presets' ? { ...n, rawQuery } : n)),
-      };
-    }),
-
-  setRawHeaders: (nodeId, rawHeaders) =>
-    set((state) => {
-      if (isLocked(state)) return state;
-      return {
-        nodes: state.nodes.map((n) => (n.id === nodeId && n.kind !== 'presets' ? { ...n, rawHeaders } : n)),
+        nodes: state.nodes.map((n) => {
+          if (n.id !== nodeId || n.kind === 'presets') return n;
+          return { ...n, rawHeaders: { ...(n.rawHeaders ?? {}), [key]: value } };
+        }),
       };
     }),
 

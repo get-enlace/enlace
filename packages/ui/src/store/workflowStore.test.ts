@@ -57,11 +57,11 @@ beforeEach(() => {
 });
 
 describe('addNode', () => {
-  // Every section (path/query/headers/body) opens pre-seeded with a Raw
-  // JSON skeleton straight from the operation's own schema — there's no
-  // Form mode any more to lazily generate one from on first switch, so
-  // this is the only place it happens (see rawDefaults.ts).
-  it('seeds rawPath/rawQuery/rawHeaders/rawBody from the matching operation, null for sections the operation declares none of', () => {
+  // Every section (params/headers/body) opens pre-seeded with a Raw JSON
+  // skeleton straight from the operation's own schema — there's no Form
+  // mode any more to lazily generate one from on first switch, so this is
+  // the only place it happens (see rawDefaults.ts).
+  it('seeds rawParams (path + query, one field each)/rawHeaders/rawBody from the matching operation, null for sections the operation declares none of', () => {
     useWorkflowStore.setState({
       operations: [
         {
@@ -70,6 +70,7 @@ describe('addNode', () => {
           path: '/widgets/{id}',
           parameters: [
             { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+            { name: 'limit', in: 'query', required: false, schema: { type: 'integer' } },
             { name: 'x-trace-id', in: 'header', required: false, schema: { type: 'string' } },
           ],
           requestBodySchema: { type: 'object', required: ['name'], properties: { name: { type: 'string' } } },
@@ -83,9 +84,11 @@ describe('addNode', () => {
     const id = addNode('PATCH /widgets/{id}');
     const node = asOperationNode(useWorkflowStore.getState().nodes.find((n) => n.id === id)!);
 
-    expect(JSON.parse(node.rawPath!.template)).toEqual({ id: '' });
-    expect(node.rawQuery).toBeNull(); // no query params declared
-    expect(JSON.parse(node.rawHeaders!.template)).toEqual({ 'x-trace-id': '' });
+    expect(node.rawParams).toEqual({
+      paths: { id: { template: '', tags: {} } },
+      queries: { limit: { template: '', tags: {} } },
+    });
+    expect(node.rawHeaders).toEqual({ 'x-trace-id': { template: '', tags: {} } });
     expect(JSON.parse(node.rawBody!.template)).toEqual({ name: '' });
   });
 
@@ -94,8 +97,7 @@ describe('addNode', () => {
     const id = addNode('GET /unknown');
     const node = asOperationNode(useWorkflowStore.getState().nodes.find((n) => n.id === id)!);
 
-    expect(node.rawPath).toBeNull();
-    expect(node.rawQuery).toBeNull();
+    expect(node.rawParams).toBeNull();
     expect(node.rawHeaders).toBeNull();
     expect(node.rawBody).toBeNull();
   });
@@ -353,18 +355,18 @@ describe('removeNode', () => {
     // RawBodyEditor.tsx already renders a dangling sourceNodeId as a
     // visible "broken" chip the user can fix or remove — so there's
     // nothing for removeNode to silently paper over here.
-    const { addNode, setRawPath, removeNode } = useWorkflowStore.getState();
+    const { addNode, setRawParamField, removeNode } = useWorkflowStore.getState();
     const a = addNode('GET /a');
     const b = addNode('GET /b');
-    setRawPath(b, {
-      template: '{"id":"{{enlace:tag1}}"}',
+    setRawParamField(b, 'paths', 'id', {
+      template: '{{enlace:tag1}}',
       tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: a, jsonPath: 'id' } },
     });
 
     removeNode(a);
 
     const nodeB = asOperationNode(useWorkflowStore.getState().nodes.find((n) => n.id === b)!);
-    expect(nodeB.rawPath?.tags.tag1).toEqual({ id: 'tag1', type: 'response_body', sourceNodeId: a, jsonPath: 'id' });
+    expect(nodeB.rawParams?.paths.id.tags.tag1).toEqual({ id: 'tag1', type: 'response_body', sourceNodeId: a, jsonPath: 'id' });
   });
 
   it('clears selectedNodeId if the removed node was selected', () => {
@@ -426,12 +428,12 @@ describe('connectNodes / disconnectNodes', () => {
   });
 
   it("doesn't touch a raw section's tag chips — a connection is an ordering edge only, separate from field mapping", () => {
-    const { addNode, connectNodes, disconnectNodes, setRawPath } = useWorkflowStore.getState();
+    const { addNode, connectNodes, disconnectNodes, setRawParamField } = useWorkflowStore.getState();
     const a = addNode('GET /a');
     const b = addNode('GET /b');
     connectNodes(a, b);
-    setRawPath(b, {
-      template: '{"id":"{{enlace:tag1}}"}',
+    setRawParamField(b, 'paths', 'id', {
+      template: '{{enlace:tag1}}',
       tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: a, jsonPath: 'id' } },
     });
 
@@ -439,7 +441,7 @@ describe('connectNodes / disconnectNodes', () => {
 
     expect(useWorkflowStore.getState().connections).toEqual([]);
     const nodeB = asOperationNode(useWorkflowStore.getState().nodes.find((n) => n.id === b)!);
-    expect(nodeB.rawPath?.tags.tag1).toEqual({
+    expect(nodeB.rawParams?.paths.id.tags.tag1).toEqual({
       id: 'tag1',
       type: 'response_body',
       sourceNodeId: a,
@@ -905,7 +907,7 @@ describe('locked while a run is in progress', () => {
   // and "take" in the store while silently having no effect on the run
   // already using the old snapshot. See workflowStore.ts's isLocked.
   it('no-ops every node-config/data-mapping/graph-structure mutation while isRunning, leaving state untouched', () => {
-    const { addNode, connectNodes, setCredential, setRawPath, setRawBody, toggleBreakpoint } = useWorkflowStore.getState();
+    const { addNode, connectNodes, setCredential, setRawParamField, setRawBody, toggleBreakpoint } = useWorkflowStore.getState();
     const a = addNode('GET /a', { x: 0, y: 0 });
     const b = addNode('GET /b', { x: 100, y: 0 });
     connectNodes(a, b);
@@ -915,7 +917,7 @@ describe('locked while a run is in progress', () => {
 
     expect(addNode('GET /c')).toBe('');
     setCredential(a, 'some-credential-id');
-    setRawPath(a, { template: '{}', tags: {} });
+    setRawParamField(a, 'paths', 'x', { template: '', tags: {} });
     setRawBody(a, { template: '{}', tags: {} });
     useWorkflowStore.getState().connectNodes(b, a);
     useWorkflowStore.getState().disconnectNodes(a, b);

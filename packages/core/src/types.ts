@@ -100,18 +100,42 @@ export type ResponseBodyTag = Extract<BodyTag, { sourceNodeId: string }>;
 export type ResponseBodyTagRef = DistributiveOmit<ResponseBodyTag, 'id'>;
 
 /**
- * The Raw JSON text an `OperationNode` stores for its path/query/headers/
- * body sections — see components/NodeConfig/RawBodyEditor.tsx for the
- * editor itself. `template` is always valid JSON text; a mapped value (or
- * an attached file — see
- * `BodyTag`'s `uploaded_file` variant) is represented as literal text
- * `{{enlace:<tagId>}}` sitting inside an existing string's quotes (see
- * utils/bodyTags.ts's `tagPattern`/`makeTagPlaceholder`), never as a
- * standalone token that would make the JSON invalid.
+ * One editable value with its tag-chip mappings — used two different ways
+ * depending on what it's attached to (see components/NodeConfig/
+ * RawBodyEditor.tsx and FieldValueEditor.tsx for the two editors):
+ *
+ * - `OperationNode.rawBody`: one `RawBody` for the *whole* request body.
+ *   `template` there is always valid JSON text; a mapped value (or an
+ *   attached file — see `BodyTag`'s `uploaded_file` variant) is literal
+ *   text `{{enlace:<tagId>}}` sitting inside an existing string's quotes
+ *   (see utils/bodyTags.ts's `tagPattern`/`makeTagPlaceholder`), never a
+ *   standalone token that would make the JSON invalid.
+ * - `OperationNode.rawParams`/`rawHeaders`: one `RawBody` per *field*
+ *   (path param, query param, or header, one map entry each — see those
+ *   properties' own comments). `template` there is plain scalar text, not
+ *   JSON — no surrounding quotes — since each field is a single value, not
+ *   a JSON document; a `{{enlace:<tagId>}}` placeholder can still sit
+ *   anywhere inside it (whole field, or mixed with literal text, e.g.
+ *   `"Bearer {{enlace:<id>}}"`), same placeholder syntax either way.
+ *
+ * Engine/rawBodyResolver.ts's `resolveRawBody` (JSON) and `resolveRawScalar`
+ * (plain field) are the two resolvers matching this split.
  */
 export interface RawBody {
   template: string;
   tags: Record<string, BodyTag>;
+}
+
+/**
+ * One independently-editable `RawBody` per path/query param name — see
+ * `RawBody`'s own doc for why each field gets its own scalar template
+ * rather than sharing one JSON blob. `paths` and `queries` are separate
+ * namespaces, never merged/keyed together, so an operation declaring the
+ * same param name in both (rare, but legal OpenAPI) never collides.
+ */
+export interface RawParamsSection {
+  paths: Record<string, RawBody>;
+  queries: Record<string, RawBody>;
 }
 
 /**
@@ -232,9 +256,30 @@ export interface OperationNode extends WorkflowNodeBase {
   kind: 'operation';
   /** References an Operation.id. */
   operationId: string;
-  rawPath?: RawBody | null;
-  rawQuery?: RawBody | null;
-  rawHeaders?: RawBody | null;
+  /**
+   * Path and query params, each its own field (see `RawParamsSection`'s own
+   * comment) — one small single-line editor per declared param
+   * (components/NodeConfig/FieldValueEditor.tsx), not one shared JSON blob.
+   * `null` only when the operation declares neither; otherwise always both
+   * `paths`/`queries` keys, each possibly an empty map. At request-build
+   * time (`operationNodeHandler.ts`'s `buildRequest`), each field resolves
+   * independently via `resolveRawScalar` — a `paths` entry substitutes
+   * into the path template (silently dropped if `{key}` doesn't actually
+   * appear there), a `queries` entry always becomes a query param.
+   */
+  rawParams?: RawParamsSection | null;
+  /**
+   * One field per declared header param, same per-field editor as
+   * `rawParams` above (components/NodeConfig/FieldValueEditor.tsx). `null`
+   * when the operation declares no header params.
+   */
+  rawHeaders?: Record<string, RawBody> | null;
+  /**
+   * The whole request body — still one shared Raw JSON section (Body
+   * keeps the full multi-line `RawBodyEditor.tsx`, unlike `rawParams`/
+   * `rawHeaders` above), since a body's shape is usually nested/structured
+   * rather than a flat list of named scalars.
+   */
   rawBody?: RawBody | null;
   /**
    * Per-node overrides of an oauth2 credential's `extraTokenParams`

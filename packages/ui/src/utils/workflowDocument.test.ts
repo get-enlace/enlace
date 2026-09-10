@@ -623,14 +623,16 @@ describe('hydrateCollection / helpers', () => {
     ).toBe("Operations POST /missing, GET /gone aren't in the loaded spec — load the matching spec before running.");
   });
 
-  it('round-trips rawPath/rawQuery', () => {
+  it('round-trips rawParams (one field per path/query param, in independent paths/queries maps)', () => {
     const withParams: WorkflowNode = {
       id: 'n-patch',
       kind: 'operation',
       operationId: 'PATCH /customers/{id}',
       credentialId: null,
-      rawPath: { template: '{"id":"c1"}', tags: {} },
-      rawQuery: { template: '{"dryRun":true}', tags: {} },
+      rawParams: {
+        paths: { id: { template: 'c1', tags: {} } },
+        queries: { dryRun: { template: 'true', tags: {} } },
+      },
     };
     const doc = serializeCollection({
       nodes: [withParams],
@@ -638,17 +640,19 @@ describe('hydrateCollection / helpers', () => {
       nodePositions: {},
       credentials: [],
     });
-    expect(asOperationNode(doc.workflows[0].nodes[0]).rawPath).toEqual({ template: '{"id":"c1"}', tags: {} });
-    expect(asOperationNode(doc.workflows[0].nodes[0]).rawQuery).toEqual({ template: '{"dryRun":true}', tags: {} });
+    expect(asOperationNode(doc.workflows[0].nodes[0]).rawParams).toEqual({
+      paths: { id: { template: 'c1', tags: {} } },
+      queries: { dryRun: { template: 'true', tags: {} } },
+    });
   });
 
-  it('round-trips rawHeaders', () => {
+  it('round-trips rawHeaders (one field per header)', () => {
     const withHeaders: WorkflowNode = {
       id: 'n-patch',
       kind: 'operation',
       operationId: 'PATCH /customers/{id}',
       credentialId: null,
-      rawHeaders: { template: '{"x-trace-id":"abc"}', tags: {} },
+      rawHeaders: { 'x-trace-id': { template: 'abc', tags: {} } },
     };
     const doc = serializeCollection({
       nodes: [withHeaders],
@@ -656,14 +660,13 @@ describe('hydrateCollection / helpers', () => {
       nodePositions: {},
       credentials: [],
     });
-    expect(asOperationNode(doc.workflows[0].nodes[0]).rawHeaders).toEqual({ template: '{"x-trace-id":"abc"}', tags: {} });
+    expect(asOperationNode(doc.workflows[0].nodes[0]).rawHeaders).toEqual({ 'x-trace-id': { template: 'abc', tags: {} } });
 
     const parsed = parseCollection(doc);
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
     expect(asOperationNode(parsed.collection.workflows[0].nodes[0]).rawHeaders).toEqual({
-      template: '{"x-trace-id":"abc"}',
-      tags: {},
+      'x-trace-id': { template: 'abc', tags: {} },
     });
   });
 

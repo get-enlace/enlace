@@ -73,7 +73,7 @@ describe('WorkflowNodeCard', () => {
     useWorkflowStore.setState({ nodes: [], nodePositions: {}, connections: [], selectedNodeId: null, isRunning: false });
   });
 
-  it('renders the method, path, and summary', () => {
+  it('renders the method and path, with the summary available as a hover hint rather than a visible line', () => {
     renderCard({
       node: makeNode(),
       operation: makeOperation({ method: 'post', path: '/pet', summary: 'Add a new pet to the store.' }),
@@ -82,10 +82,16 @@ describe('WorkflowNodeCard', () => {
 
     expect(screen.getByText('POST')).toBeInTheDocument();
     expect(screen.getByText('/pet')).toBeInTheDocument();
-    expect(screen.getByText('Add a new pet to the store.')).toBeInTheDocument();
+    // Not rendered as its own visible line any more — a card with a
+    // description shouldn't take more vertical space than one without.
+    expect(screen.queryByText('Add a new pet to the store.')).not.toBeInTheDocument();
+    // Still surfaced somewhere, as one hover tooltip covering the whole card
+    // (path first, then the description) rather than a per-element title
+    // that made hovering different parts of the card show different things.
+    expect(screen.getByText('POST').closest('fieldset')).toHaveAttribute('title', '/pet\nAdd a new pet to the store.');
   });
 
-  it('carries the full path in a title attribute, for when a long one is CSS-ellipsized', () => {
+  it('carries the full path in the card\'s title attribute, for when a long one is CSS-ellipsized', () => {
     // Reproduces a reported bug: an unbounded path (styles/canvas.css used
     // to let it wrap instead of clamping) could render taller/wider than
     // the fixed size groupGeometry.ts's frame math assumes every card is,
@@ -99,7 +105,7 @@ describe('WorkflowNodeCard', () => {
       operation: makeOperation({ method: 'get', path: longPath }),
       selected: false,
     });
-    expect(screen.getByText(longPath)).toHaveAttribute('title', longPath);
+    expect(screen.getByText(longPath).closest('fieldset')).toHaveAttribute('title', longPath);
   });
 
   it('shows the operationId as a legend when present, omits it otherwise', () => {

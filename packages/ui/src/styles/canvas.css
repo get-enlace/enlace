@@ -124,6 +124,21 @@
   border-radius: 50%;
 }
 
+/* React Flow centers a Handle at 50% of its positioned ancestor's own
+ * height (reactflow/dist/style.css's .react-flow__handle-left/-right) —
+ * here, .workflow-node itself (the <fieldset>, the nearest `position:
+ * relative` ancestor a Handle lands in — see WorkflowNodeCard.tsx). A
+ * <legend> renders straddling the fieldset's top border, outside its
+ * padded content box, but still counts toward the fieldset's own total
+ * rendered height — so 50% of that total sits a bit above the visible
+ * bordered box's true center, nudged up by roughly half the legend's own
+ * line height. Approximate correction, not a measured value — nudge
+ * further if it still looks off at a different zoom/font size. */
+.workflow-node .react-flow__handle-left,
+.workflow-node .react-flow__handle-right {
+  top: calc(50% - 2px);
+}
+
 /* .workflow-node is a <fieldset> now (see WorkflowNodeCard.tsx) — reset the
    UA defaults (border/padding/margin, min-width: min-content) same as
    .operation-list__item. */
@@ -348,21 +363,6 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--color-text);
-}
-
-/* Long OpenAPI descriptions would otherwise stretch the node to fit a
-   single line (fieldset had no max-width) — clamp to 2 lines instead and
-   rely on the title attr (see WorkflowNodeCard.tsx) for the full text. */
-.workflow-node__summary {
-  color: var(--color-text-muted);
-  font-size: 12px;
-  margin-top: 4px;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow-wrap: anywhere;
 }
 
 /* --- presets-node: the only chrome a preset dropped from the palette ever
@@ -629,6 +629,20 @@
   font-family: var(--font-sans);
 }
 
+/* React Flow's own node wrapper sets `pointer-events: all` as an *inline*
+ * style (its NodeWrapper source, unconditionally) — no stylesheet rule,
+ * however specific, can beat that short of `!important`. An expanded
+ * group's wrapper is sized to the *entire* frame, not just its visible
+ * titlebar/border, so left alone it silently ate every click landing in
+ * the empty space between member cards — including a connector edge
+ * routed through there. The actual fix lives in buildFlowGraph.ts's
+ * `buildFlowNodes` (a `style: { pointerEvents: 'none' }` on the expanded
+ * group's own Node object — React Flow spreads a per-node `style` prop in
+ * after its own default, the sanctioned override point) — collapsed stays
+ * untouched there, so this just documents why `.node-group--expanded`
+ * itself doesn't need its own `pointer-events: none` any more either;
+ * the titlebar's `pointer-events: auto` below still matters regardless,
+ * since a group's own chrome must stay clickable either way. */
 .node-group--collapsed {
   position: relative;
   width: 240px;

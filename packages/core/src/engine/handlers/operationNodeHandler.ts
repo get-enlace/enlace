@@ -1,5 +1,5 @@
 import { resolveCredentialInjection } from '../credentials.js';
-import { resolveRawBody } from '../rawBodyResolver.js';
+import { resolveRawBody, resolveRawScalar } from '../rawBodyResolver.js';
 import { getByPath } from '../path.js';
 import { rawFileTagFieldPath } from '../../bodyTags.js';
 import type { Credential, FieldValue, Operation, RunStep, RunStepRequest, WorkflowNode } from '../../types.js';
@@ -44,36 +44,33 @@ export async function buildRequest(
   const isMultipart = operation.requestBodyContentType === 'multipart/form-data';
   const headers: Record<string, string> = isMultipart ? {} : { 'Content-Type': 'application/json' };
 
-  // Every section is Raw JSON — see OperationNode's own comment in types.ts
-  // for why there's no per-leaf Form-mode field loop here any more. Each
-  // section resolves independently via resolveRawBody (tag chips + $rand.
-  // calls substituted against already-captured responses); an absent
-  // section (no path params, no body, etc.) just contributes nothing.
-  if (node.rawPath) {
-    const pathObj = resolveRawBody(node.rawPath, stepsByNodeId, nodeLabels);
-    if (pathObj && typeof pathObj === 'object' && !Array.isArray(pathObj)) {
-      for (const [key, value] of Object.entries(pathObj as Record<string, unknown>)) {
-        if (value === undefined || value === null) continue;
-        requestPath = requestPath.replace(`{${key}}`, encodeURIComponent(String(value)));
-      }
+  // Path/query/header params are each their own field now (see
+  // OperationNode's own comments in types.ts) — one independently-editable
+  // RawBody per declared name, resolved via resolveRawScalar (tag chips +
+  // $rand. calls substituted against already-captured responses, no JSON
+  // parsing since a field is a plain scalar, not a document). An absent
+  // section (no path/query params, no header params) just contributes
+  // nothing; a field with no value typed in resolves to '' and is still
+  // sent (a `paths` entry with `{key}` not present in the path template is
+  // silently a no-op — the same as always naming a real path segment
+  // wrong would do).
+  if (node.rawParams) {
+    for (const [key, field] of Object.entries(node.rawParams.paths)) {
+      const value = resolveRawScalar(field, stepsByNodeId, nodeLabels);
+      if (value === undefined || value === null) continue;
+      requestPath = requestPath.replace(`{${key}}`, encodeURIComponent(String(value)));
     }
-  }
-  if (node.rawQuery) {
-    const queryObj = resolveRawBody(node.rawQuery, stepsByNodeId, nodeLabels);
-    if (queryObj && typeof queryObj === 'object' && !Array.isArray(queryObj)) {
-      for (const [key, value] of Object.entries(queryObj as Record<string, unknown>)) {
-        if (value === undefined || value === null) continue;
-        query.set(key, typeof value === 'string' ? value : String(value));
-      }
+    for (const [key, field] of Object.entries(node.rawParams.queries)) {
+      const value = resolveRawScalar(field, stepsByNodeId, nodeLabels);
+      if (value === undefined || value === null) continue;
+      query.set(key, typeof value === 'string' ? value : String(value));
     }
   }
   if (node.rawHeaders) {
-    const headersObj = resolveRawBody(node.rawHeaders, stepsByNodeId, nodeLabels);
-    if (headersObj && typeof headersObj === 'object' && !Array.isArray(headersObj)) {
-      for (const [key, value] of Object.entries(headersObj as Record<string, unknown>)) {
-        if (value === undefined || value === null) continue;
-        headers[key] = typeof value === 'string' ? value : String(value);
-      }
+    for (const [key, field] of Object.entries(node.rawHeaders)) {
+      const value = resolveRawScalar(field, stepsByNodeId, nodeLabels);
+      if (value === undefined || value === null) continue;
+      headers[key] = typeof value === 'string' ? value : String(value);
     }
   }
 
