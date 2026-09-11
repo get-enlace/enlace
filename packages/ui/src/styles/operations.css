@@ -107,7 +107,17 @@
    fieldset's own background already shows through the gap). Only rendered
    when the spec actually declares an operationId (see OperationList.tsx) —
    not every operation has one. */
+/* Single line + ellipsis, not left to size-to-content — a long operationId
+   (routine on generated specs) otherwise renders at its full text width,
+   which a <legend> is never clipped to by its fieldset's own bounds (same
+   overflow WorkflowNodeCard's canvas card had — see .workflow-node__operation-id
+   in canvas.css). max-width: 100% resolves against .operation-list__item's
+   content box same as any in-flow child despite that rendering quirk. */
 .operation-list__operation-id {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   padding: 0 4px;
   font-family: var(--font-mono);
   font-size: 10px;

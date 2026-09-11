@@ -172,7 +172,22 @@
   font-size: 13px;
 }
 
+/* Single line + ellipsis, not left to size-to-content — a long operationId
+   (routine on generated specs, e.g. NSwag's `update_current_customer_
+   customers_me_put` style names) otherwise renders at its full text width,
+   which a <legend> is never clipped to by its fieldset's own max-width (the
+   straddle-the-border rendering in .workflow-node's comment above means the
+   legend isn't inside that fieldset's clipped padding box at all) — the
+   overflow ran straight past the card's right edge and the × button.
+   max-width: 100% resolves against .workflow-node's content box same as any
+   in-flow child despite that rendering quirk, so this caps it there; rely on
+   the fieldset's own title attr (WorkflowNodeCard.tsx) for the full text,
+   same as .workflow-node__path below. */
 .workflow-node__operation-id {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   padding: 0 4px;
   font-family: var(--font-mono);
   font-size: 10px;
