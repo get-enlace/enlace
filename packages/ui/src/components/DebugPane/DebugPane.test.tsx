@@ -72,11 +72,9 @@ describe('DebugPane (Results)', () => {
   });
 
   it('shows the run-level error message when one is set', () => {
-    useWorkflowStore.setState({
-      error: 'Could not determine a target base URL — add a `servers` entry to the OpenAPI spec.',
-    });
+    useWorkflowStore.setState({ error: 'Failed to load spec: 500' });
     render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
-    expect(screen.getByText(/Could not determine a target base URL/)).toBeInTheDocument();
+    expect(screen.getByText('Failed to load spec: 500')).toBeInTheDocument();
   });
 
   it('redacts the Authorization header in the request panels', async () => {

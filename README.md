@@ -60,9 +60,14 @@ Open `http://localhost:4000/enlace`.
   memory for the session and are attached directly to outgoing requests —
   they're never sent to or stored by the adapter, and the debug pane
   redacts them before ever rendering.
-- **The adapter's job is small.** It serves the OpenAPI document and the UI
-  bundle; it reads the target base URL from the spec's own
-  `servers[0].url`. Everything else — resolving fields, firing requests,
+- **The adapter's job is small.** It just serves the OpenAPI document and
+  the UI bundle. The browser works out the target base URL itself: an
+  explicit `servers[0].url` in the spec is honored as-is (this is how you
+  point Enlace at a different origin than the adapter — e.g. a target API
+  behind CORS), but a spec doesn't need one at all — with `servers` missing
+  or relative, requests default to wherever the spec document was actually
+  served from, so the same spec works unmodified across every environment
+  you deploy to. Everything else — resolving fields, firing requests,
   showing results — happens entirely in the browser.
 
 ## Try the parallel-execution demo

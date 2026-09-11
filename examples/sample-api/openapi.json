@@ -1,7 +1,6 @@
 {
   "openapi": "3.0.3",
   "info": { "title": "Sample Store API", "version": "1.0.0" },
-  "servers": [{ "url": "http://localhost:4000" }],
   "paths": {
     "/customers": {
       "post": {

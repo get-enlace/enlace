@@ -96,8 +96,13 @@ export const createRunSlice: StateCreator<WorkflowState, [], [], RunSlice> = (se
     });
     try {
       const { connections, operations, credentials, baseUrl, uploadedFiles } = get();
+      // baseUrl is only ever null here if run() somehow fires before
+      // loadOperations() has resolved (App.tsx gates the canvas on that, so
+      // this is a defensive last resort, not an expected path) —
+      // resolveBaseUrl (types.ts) itself always resolves to a string once a
+      // spec has loaded, spec-declared servers or not.
       if (!baseUrl) {
-        throw new Error('Could not determine a target base URL — add a `servers` entry to the OpenAPI spec.');
+        throw new Error('No spec loaded yet — cannot determine a target base URL.');
       }
       const operationsById = new Map(operations.map((o) => [o.id, o]));
       const credentialsById = new Map(credentials.map((c) => [c.id, c]));

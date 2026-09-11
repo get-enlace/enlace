@@ -21,23 +21,15 @@ export const createSpecSlice: StateCreator<WorkflowState, [], [], SpecSlice> = (
 
   loadOperations: async () => {
     try {
-      const spec = await fetchSpec();
+      const { spec, specUrl } = await fetchSpec();
       const operations = parseOperations(spec);
-      const baseUrl = resolveBaseUrl(spec);
+      const baseUrl = resolveBaseUrl(spec, specUrl);
       const declaredCredentials = extractDeclaredCredentials(spec);
       const info = spec.info ?? {};
       const specInfo: { title?: string; version?: string } = {};
       if (typeof info.title === 'string') specInfo.title = info.title;
       if (typeof info.version === 'string') specInfo.version = info.version;
-      set({
-        operations,
-        baseUrl,
-        specInfo,
-        declaredCredentials,
-        error: baseUrl
-          ? null
-          : 'Could not determine a target base URL — add a `servers` entry to the OpenAPI spec.',
-      });
+      set({ operations, baseUrl, specInfo, declaredCredentials, error: null });
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err) });
     }

@@ -37,15 +37,44 @@ export function defaultPosition(index: number): Position {
 }
 
 /**
- * Reads the target base URL from the spec itself — `servers[0].url` —
- * exactly the convention swagger-ui-express's own "Try it out" already
- * relies on. There's no adapter-side `targetBaseUrl` option anymore: the
- * browser is what makes the request now, so it's the browser that needs
- * this, not the adapter.
+ * Reads the target base URL from the spec itself — `servers[0].url` — per
+ * the OpenAPI Server Object rules, not just an already-absolute string the
+ * way this used to work. Two things follow from that:
+ *
+ * - `servers` missing/empty defaults to a Server Object with `url: '/'`
+ *   (the spec's own stated default), rather than an error demanding the
+ *   spec add one. A hand-written or per-environment spec was otherwise
+ *   forced into hardcoding one absolute origin — wrong the moment the same
+ *   spec is served from local/dev/qa/uat/prod — just to get Enlace running
+ *   at all (see the enlace-fastapi example's `servers=[{"url":
+ *   "https://enlace-fastapi.onrender.com"}]`, added as a workaround for
+ *   exactly this before this fix).
+ * - A *relative* `servers[0].url` (including that `/` default) resolves
+ *   against `specUrl` — the absolute URL the spec document was itself
+ *   served from (see client.ts's `fetchSpec`) — not `window.location`.
+ *   That's what makes a bare relative entry (or none at all) automatically
+ *   correct in every environment: it always means "wherever this adapter
+ *   is actually mounted," survives a path-prefixing reverse proxy in front
+ *   of it, and needs no per-environment editing or scripting.
+ *
+ * An *absolute* `servers[0].url` is still honored exactly as before —
+ * `new URL` ignores `specUrl` whenever the first argument already has a
+ * scheme. That's deliberate, not just legacy behavior: ARCHITECTURE.md
+ * documents cross-origin execution (target API on a different origin than
+ * the adapter) as a supported case — CORS handling and the `cookie`
+ * credential type both depend on it working — so a spec author's explicit
+ * absolute host is a real, intentional signal, not something to second-guess.
+ *
+ * A future Enlace CLI (running an exported workflow outside a browser, in
+ * CI or on a local machine) has no `specUrl`/document location to resolve a
+ * relative entry against at all — it should detect that case itself and
+ * require an explicit `--url` rather than guess. That's why this stays
+ * scoped to the browser-side UI package rather than living in
+ * `@get-enlace/core`: the raw `servers` data is environment-agnostic, but
+ * how to resolve a relative entry isn't.
  */
-export function resolveBaseUrl(spec: Record<string, any>): string | null {
+export function resolveBaseUrl(spec: Record<string, any>, specUrl: string): string {
   const servers: Array<{ url?: string }> = spec.servers ?? [];
-  if (servers.length === 0 || !servers[0]?.url) return null;
 
   if (servers.length > 1) {
     console.warn(
@@ -54,7 +83,13 @@ export function resolveBaseUrl(spec: Record<string, any>): string | null {
     );
   }
 
-  return servers[0].url;
+  const rawUrl = servers[0]?.url || '/';
+  const resolved = new URL(rawUrl, specUrl).toString();
+  // Strip the one trailing slash `new URL` always leaves (even for a bare
+  // origin) — callers concatenate this directly with an operation's own
+  // leading-slash path (operationNodeHandler.ts's `${baseUrl}${requestPath}`),
+  // which would otherwise double up into "//".
+  return resolved.endsWith('/') ? resolved.slice(0, -1) : resolved;
 }
 
 /**
@@ -85,7 +120,7 @@ export function uploadedFileKey(nodeId: string, fieldPath: string): string {
 
 export interface WorkflowState {
   operations: Operation[];
-  /** Derived from the loaded spec's `servers[0].url` — null until loadOperations() resolves. */
+  /** Derived from the loaded spec via `resolveBaseUrl` — null until loadOperations() resolves. */
   baseUrl: string | null;
   /** `info.title` / `info.version` from the loaded spec — used only as a hint on exported workflow files. */
   specInfo: { title?: string; version?: string } | null;

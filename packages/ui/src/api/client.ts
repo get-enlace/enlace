@@ -9,9 +9,18 @@ const API_BASE = 'api';
  * shape this app actually works with happens client-side, via
  * engine/specParser.ts's `parseOperations()`, since that's where execution
  * itself now runs too.
+ *
+ * `specUrl` is `res.url` — the fetch's own resolved, absolute URL for the
+ * document, following any redirect. types.ts's `resolveBaseUrl` needs this:
+ * per the OpenAPI Server Object rules, a relative `servers[].url` (or the
+ * spec's own default of `/` when `servers` is missing) resolves against
+ * "the location where the document is being served" — that's this fetch's
+ * URL, not `window.location` (wherever the SPA route happens to be, which
+ * isn't necessarily the same thing once an adapter sits behind a
+ * path-prefixing reverse proxy).
  */
-export async function fetchSpec(): Promise<Record<string, any>> {
+export async function fetchSpec(): Promise<{ spec: Record<string, any>; specUrl: string }> {
   const res = await fetch(`${API_BASE}/spec`);
   if (!res.ok) throw new Error(`Failed to load spec: ${res.status}`);
-  return res.json();
+  return { spec: await res.json(), specUrl: res.url };
 }
