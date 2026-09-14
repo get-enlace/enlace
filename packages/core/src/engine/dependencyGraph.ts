@@ -97,3 +97,37 @@ export function computeAncestors(
 
   return ancestors;
 }
+
+/**
+ * The mirror image of `computeAncestors`: every node that comes *after*
+ * `nodeId` — i.e. everything that would need re-running if `nodeId`'s own
+ * result turned out to be stale (see chainExecutor.ts's `previousRun`
+ * staleness cascade). Built by inverting the same shared `dependsOn` graph
+ * `computeAncestors` walks forward, so the two stay implicitly in sync with
+ * whatever `buildDependencyGraph` considers an edge (explicit connections,
+ * mapped credentialExtraParamOverrides, assert preset check sources) —
+ * there's no second, separately-maintained notion of "depends on" here.
+ */
+export function computeDescendants(
+  nodes: WorkflowNode[],
+  connections: WorkflowConnection[],
+  nodeId: string
+): Set<string> {
+  const dependsOn = buildDependencyGraph(nodes, connections);
+  const dependedBy = new Map<string, Set<string>>();
+  for (const node of nodes) dependedBy.set(node.id, new Set());
+  for (const [id, deps] of dependsOn) {
+    for (const dep of deps) dependedBy.get(dep)?.add(id);
+  }
+
+  const descendants = new Set<string>();
+  const queue = [...(dependedBy.get(nodeId) ?? [])];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (descendants.has(current)) continue;
+    descendants.add(current);
+    queue.push(...(dependedBy.get(current) ?? []));
+  }
+
+  return descendants;
+}

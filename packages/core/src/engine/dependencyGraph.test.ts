@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeAncestors } from './dependencyGraph.js';
+import { computeAncestors, computeDescendants } from './dependencyGraph.js';
 import type { OperationNode, WorkflowConnection, WorkflowNode } from '../types.js';
 
 function node(id: string): OperationNode {
@@ -81,5 +81,72 @@ describe('computeAncestors', () => {
     };
 
     expect(computeAncestors([a, presetsNode], [], 'g1')).toEqual(new Set(['a']));
+  });
+});
+
+describe('computeDescendants', () => {
+  it('includes a transitive descendant reached only through a connection, even when the middle node carries no data', () => {
+    // A -> B -> C via explicit connections; B has no field mapping at all.
+    const a = node('a');
+    const b = node('b');
+    const c = node('c');
+    const connections: WorkflowConnection[] = [
+      { fromNodeId: 'a', toNodeId: 'b' },
+      { fromNodeId: 'b', toNodeId: 'c' },
+    ];
+
+    expect(computeDescendants([a, b, c], connections, 'a')).toEqual(new Set(['b', 'c']));
+  });
+
+  it('returns an empty set for a node nothing depends on', () => {
+    const a = node('a');
+    const b = node('b');
+
+    expect(computeDescendants([a, b], [], 'a')).toEqual(new Set());
+  });
+
+  it("excludes a sibling branch that doesn't depend on the given node", () => {
+    // A -> B, C -> D: B is not a descendant of C, and vice versa.
+    const a = node('a');
+    const b = node('b');
+    const c = node('c');
+    const d = node('d');
+    const connections: WorkflowConnection[] = [
+      { fromNodeId: 'a', toNodeId: 'b' },
+      { fromNodeId: 'c', toNodeId: 'd' },
+    ];
+
+    expect(computeDescendants([a, b, c, d], connections, 'a')).toEqual(new Set(['b']));
+  });
+
+  it('follows a mapped credentialExtraParamOverrides entry forward, same implied edge computeAncestors sees backward', () => {
+    const a = node('a');
+    const b: WorkflowNode = {
+      ...node('b'),
+      credentialExtraParamOverridesEnabled: true,
+      credentialExtraParamOverrides: {
+        audience: { source: 'mapped', fromNodeId: 'a', fromResponseFieldPath: 'tenant.audience' },
+      },
+    };
+
+    expect(computeDescendants([a, b], [], 'a')).toEqual(new Set(['b']));
+  });
+
+  it("follows an assert preset's check source forward to the collection node itself", () => {
+    const a = node('a');
+    const presetsNode: WorkflowNode = {
+      id: 'g1',
+      kind: 'presets',
+      credentialId: null,
+      presets: [
+        {
+          id: 's1',
+          kind: 'assert',
+          checks: [{ id: 'c1', source: { type: 'response_status', sourceNodeId: 'a' }, operator: 'equals', expected: '200' }],
+        },
+      ],
+    };
+
+    expect(computeDescendants([a, presetsNode], [], 'a')).toEqual(new Set(['g1']));
   });
 });

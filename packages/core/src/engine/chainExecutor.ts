@@ -111,6 +111,26 @@ export interface ChainExecutorOptions {
    * `run()`, which stashes it as `activeControl`).
    */
   onControl?: (control: RunControl) => void;
+  /**
+   * A prior run's outcome to seed this one from — what powers "Rerun
+   * failed" (store/workflowStore.ts's `run({ fromLastRun: true })`): a node
+   * with a non-error step here starts pre-marked `'completed'`, its step
+   * reused verbatim, instead of `'pending'`. A node with no step here (it
+   * never got that far last time — `'skipped'`/`'paused'`/never-reached,
+   * chainExecutor.ts doesn't need to know or care which), an error step
+   * (the actual failure — or a downstream retry target), or an id no
+   * longer present in this workflow (removed since) all start fresh at
+   * `'pending'` — resume-worthiness is never re-derived from *why* a node
+   * didn't complete, only from whether it did. A `'completed'` node is
+   * never re-run, full stop, regardless of `previousRun` — this only ever
+   * widens which nodes start pre-completed, it never overrides a status
+   * this same call would otherwise compute. Whether a given `'completed'`
+   * step from a prior run is still trustworthy (the node's config hasn't
+   * changed since) is the caller's decision to make before ever building
+   * this — see store/slices/runSlice.ts's staleness check against
+   * `lastRunNodesById` — not something this option itself evaluates.
+   */
+  previousRun?: RunResult;
 }
 
 /**
@@ -138,6 +158,14 @@ export interface ChainExecutorOptions {
  * already fired can't be un-sent. Both also immediately settle every node
  * that was still `'pending'` or `'paused'` at that moment to `'skipped'`,
  * rather than leaving it in limbo for the rest of the run.
+ *
+ * `options.previousRun`, when given, seeds some nodes as already
+ * `'completed'` before any of the above ever runs — see its own doc. This is
+ * what lets "Rerun failed" skip straight to (and only to) the node that
+ * actually failed last time, its still-unreached siblings, and anything
+ * downstream of either — the dependency-satisfaction check above treats a
+ * seeded node exactly like one that just settled, so no other logic here
+ * needs to know a resume is even happening.
  */
 export async function executeChain(
   workflow: Workflow,
@@ -183,6 +211,19 @@ export async function executeChain(
 
   const emit = (nodeId: string, s: RunStepStatus, step?: RunStep, request?: RunStepRequest) =>
     options.onEvent?.({ nodeId, status: s, step, request });
+
+  // See ChainExecutorOptions.previousRun's own doc — seeds pre-completed
+  // nodes before anything below has a chance to fire them. Emitted the same
+  // way a freshly-settled node would be, so onEvent consumers (the store's
+  // stepStatusByNodeId/runResult accumulation) need no separate code path
+  // for "this one came from a prior run."
+  for (const step of options.previousRun?.steps ?? []) {
+    if (step.error || !status.has(step.nodeId)) continue;
+    status.set(step.nodeId, 'completed');
+    stepsByNodeId.set(step.nodeId, step);
+    steps.push(step);
+    emit(step.nodeId, 'completed', step);
+  }
 
   const isSatisfied = (nodeId: string) => [...dependsOn.get(nodeId)!].every((depId) => status.get(depId) === 'completed');
 

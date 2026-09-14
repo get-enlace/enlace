@@ -288,8 +288,11 @@
 }
 
 /* Pass: keep the idle neutral border — success is the green ✓ badge only,
-   not a green outline competing with selection/status chrome. */
-.workflow-node--completed {
+   not a green outline competing with selection/status chrome. Excludes
+   --selected so a completed node clicked after a run still shows the
+   focus border instead of this rule silently winning the cascade (same
+   specificity, later source order). */
+.workflow-node--completed:not(.workflow-node--selected) {
   border-width: 1px;
   border-color: var(--color-border);
 }
@@ -617,7 +620,10 @@
   border-width: 2px;
 }
 
-.presets-node--completed {
+/* Excludes --selected for the same reason as .workflow-node--completed
+   above: same specificity + later source order would otherwise clobber
+   the focus border on a completed preset node after it's clicked. */
+.presets-node--completed:not(.presets-node--selected) {
   border-color: var(--color-post);
 }
 

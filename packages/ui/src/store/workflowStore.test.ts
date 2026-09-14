@@ -53,6 +53,7 @@ beforeEach(() => {
     isDebugRun: false,
     debugConsoleOpen: false,
     error: null,
+    lastRunNodesById: null,
   });
 });
 
@@ -755,6 +756,88 @@ describe('run', () => {
     await runPromise;
     expect(useWorkflowStore.getState().isDebugRun).toBe(false);
     expect(useWorkflowStore.getState().debugConsoleOpen).toBe(false);
+  });
+
+  describe('run({ fromLastRun: true }) — "Rerun failed"', () => {
+    const noop = {
+      id: 'GET /noop',
+      method: 'get' as const,
+      path: '/noop',
+      parameters: [],
+      requestBodySchema: null,
+      requestBodyContentType: null,
+      responseSchema: null,
+    };
+    const ok = () => ({ status: 200, headers: new Headers({ 'content-type': 'application/json' }), json: async () => ({}) });
+    const fail = () => ({ status: 500, headers: new Headers({ 'content-type': 'application/json' }), json: async () => ({}) });
+
+    it('skips a node that already completed and retries only the one that failed', async () => {
+      useWorkflowStore.setState({ baseUrl: 'http://example.test', operations: [noop] });
+      const { addNode, connectNodes, run } = useWorkflowStore.getState();
+      const a = addNode('GET /noop');
+      const b = addNode('GET /noop');
+      connectNodes(a, b);
+
+      const fetchMock = vi.fn().mockResolvedValueOnce(ok()).mockResolvedValueOnce(fail());
+      vi.stubGlobal('fetch', fetchMock);
+
+      await run();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(useWorkflowStore.getState().stepStatusByNodeId[a]).toBe('completed');
+      expect(useWorkflowStore.getState().stepStatusByNodeId[b]).toBe('failed');
+      const aStepAfterFirstRun = useWorkflowStore.getState().runResult?.steps.find((s) => s.nodeId === a);
+
+      fetchMock.mockResolvedValueOnce(ok());
+      await run({ fromLastRun: true });
+
+      // Only b's request went out the second time — a's is the exact same
+      // step object carried over, never re-fetched.
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      const final = useWorkflowStore.getState();
+      expect(final.stepStatusByNodeId[a]).toBe('completed');
+      expect(final.stepStatusByNodeId[b]).toBe('completed');
+      expect(final.runResult?.steps.find((s) => s.nodeId === a)).toBe(aStepAfterFirstRun);
+    });
+
+    it('re-runs a node whose config changed since the last run, even though it completed', async () => {
+      useWorkflowStore.setState({ baseUrl: 'http://example.test', operations: [noop] });
+      const { addNode, connectNodes, setRawBody, run } = useWorkflowStore.getState();
+      const a = addNode('GET /noop');
+      const b = addNode('GET /noop');
+      connectNodes(a, b);
+
+      const fetchMock = vi.fn().mockResolvedValueOnce(ok()).mockResolvedValueOnce(fail());
+      vi.stubGlobal('fetch', fetchMock);
+
+      await run();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+
+      // a already completed successfully, but editing it after the fact
+      // means its cached step is no longer trustworthy.
+      setRawBody(a, { template: '{}', tags: {} });
+
+      fetchMock.mockResolvedValueOnce(ok()).mockResolvedValueOnce(ok());
+      await run({ fromLastRun: true });
+
+      // Both re-fire: a because it's stale, b because it never completed.
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      const final = useWorkflowStore.getState();
+      expect(final.stepStatusByNodeId[a]).toBe('completed');
+      expect(final.stepStatusByNodeId[b]).toBe('completed');
+    });
+
+    it('runs fresh, with no error, when there is no previous run to resume from', async () => {
+      useWorkflowStore.setState({ baseUrl: 'http://example.test', operations: [noop] });
+      const { addNode, run } = useWorkflowStore.getState();
+      const a = addNode('GET /noop');
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(ok()));
+
+      await run({ fromLastRun: true });
+
+      expect(useWorkflowStore.getState().error).toBeNull();
+      expect(useWorkflowStore.getState().stepStatusByNodeId[a]).toBe('completed');
+    });
   });
 });
 

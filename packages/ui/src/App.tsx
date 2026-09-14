@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useWorkflowStore } from './store/workflowStore.js';
+import { hasResumableFailure } from './store/slices/runSlice.js';
 import {
   Canvas,
   ChromeSettingsMenu,
@@ -25,6 +26,7 @@ export default function App() {
     continueExecution,
     stepNode,
     stopExecution,
+    runResult,
   } = useWorkflowStore();
   // Pure view state (not workflow data) — collapsing a pane doesn't change
   // what gets run, just how much canvas room the user gets to work with.
@@ -45,6 +47,12 @@ export default function App() {
   // button always has a sensible default even before you've clicked
   // anything on canvas, but respects your selection once you have.
   const stepTarget = pausedNodeIds.includes(selectedNodeId ?? '') ? selectedNodeId! : pausedNodeIds[0];
+  // Hidden, not disabled, when there's nothing to rerun — no button to
+  // explain before anyone's run anything yet. The `!isRunning` half is
+  // belt-and-suspenders: RunControls' idle branch (the only one that ever
+  // renders this button) is itself unreachable while running, since it
+  // swaps to the spinner/Continue-Step-Stop chrome first.
+  const canRerunFailed = !isRunning && hasResumableFailure(runResult, nodes);
 
   return (
     <div className="app">
@@ -60,8 +68,10 @@ export default function App() {
             isDebugRun={isDebugRun}
             pausedCount={pausedNodeIds.length}
             canStep={!!stepTarget}
+            canRerunFailed={canRerunFailed}
             onRun={() => run()}
             onDebug={() => run({ useBreakpoints: true })}
+            onRerunFailed={() => run({ fromLastRun: true })}
             onContinue={continueExecution}
             onStep={() => stepTarget && stepNode(stepTarget)}
             onStop={stopExecution}

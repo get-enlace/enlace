@@ -247,14 +247,16 @@
   gap: 8px;
 }
 
-/* Segmented execution cluster — Run|Debug idle, Continue|Step|Stop while
-   debugging. Fixed width so the chrome doesn't jump between modes (or when
-   Run becomes Running…). */
+/* Segmented execution cluster — Run|Debug(|Rerun failed) idle,
+   Continue|Step|Stop while debugging. min-width, not width — holds the
+   2-button idle/running size steady (nothing shorter ever renders here) but
+   lets the row grow by one slot when Rerun failed becomes showable, rather
+   than reserving dead space for it before anything's ever run. */
 .run-segment {
   display: inline-flex;
   align-items: stretch;
   box-sizing: border-box;
-  width: 12.5rem;
+  min-width: 12.5rem;
   border: 1px solid var(--color-border);
   border-radius: 6px;
   overflow: hidden;
@@ -316,6 +318,17 @@
 .run-segment__btn--debug:not(:disabled):hover {
   filter: brightness(1.15);
   color: #ffb14a;
+}
+
+/* Teal — distinct from Run's green and Debug's amber, same soft-fill
+   treatment as --debug above rather than a solid block. */
+.run-segment__btn--rerun {
+  background: var(--color-patch-bg);
+  color: var(--color-patch);
+}
+
+.run-segment__btn--rerun:not(:disabled):hover {
+  filter: brightness(1.15);
 }
 
 .run-segment__btn--stop {

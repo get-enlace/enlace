@@ -215,6 +215,17 @@ export interface WorkflowState {
   debugConsoleOpen: boolean;
   error: string | null;
   /**
+   * Every node exactly as it was at the start of the most recent run —
+   * `run()`'s own snapshot for the *next* "Rerun failed"
+   * (`run({ fromLastRun: true })`) to diff against (see
+   * `slices/runSlice.ts`'s `buildFromLastRunSeed`). Reference-equal to the
+   * actual `WorkflowNode` objects live at that moment, not a clone —
+   * cheap, and exactly what the staleness check needs, since every
+   * mutating store action already leaves an untouched node's reference
+   * unchanged. `null` until the first run of the session.
+   */
+  lastRunNodesById: Map<string, WorkflowNode> | null;
+  /**
    * Set by an import that left credentials unusable — non-null pops the
    * credentials drawer open so the affected cards (each marked "Needs a
    * value") are right where the fix happens, instead of listing their names
@@ -392,6 +403,13 @@ export interface WorkflowState {
    * (plain "Run") never gates on breakpoints — chrome shows a spinner +
    * Stop instead. Both modes receive `activeControl` so Stop can halt
    * admission of new nodes while in-flight requests still finish.
+   *
+   * `fromLastRun: true` (the "Rerun failed" button) seeds this run from the
+   * previous one instead — see `slices/runSlice.ts`'s `buildFromLastRunSeed`
+   * — so a node that already completed, and whose config hasn't changed
+   * since, is skipped rather than re-run. Mutually exclusive with
+   * `useBreakpoints` in practice (no UI path offers both); combining them
+   * is unsupported, not actively guarded against.
    */
-  run: (options?: { useBreakpoints?: boolean }) => Promise<void>;
+  run: (options?: { useBreakpoints?: boolean; fromLastRun?: boolean }) => Promise<void>;
 }

@@ -1,16 +1,24 @@
 /**
- * Header execution cluster. Fixed-width segment that morphs between:
- * - idle: Run | Debug
+ * Header execution cluster. Segment that morphs between:
+ * - idle: Run | Debug | Rerun failed (only once `canRerunFailed`)
  * - plain run: spinner | Stop
  * - debug: Continue | Step | Stop
+ *
+ * Width is a min, not a fixed value (see .run-segment in chrome.css) —
+ * the idle row grows by one slot whenever Rerun failed is showable, rather
+ * than reserving space for it up front (there's nothing to rerun before
+ * anything's ever run, so a permanently-reserved slot would mostly sit
+ * looking like a dead button).
  */
 export function RunControls({
   isRunning,
   isDebugRun,
   pausedCount,
   canStep,
+  canRerunFailed,
   onRun,
   onDebug,
+  onRerunFailed,
   onContinue,
   onStep,
   onStop,
@@ -20,8 +28,11 @@ export function RunControls({
   isDebugRun: boolean;
   pausedCount: number;
   canStep: boolean;
+  /** Whether the last run left something unfinished — see store/slices/runSlice.ts's `hasResumableFailure`. */
+  canRerunFailed: boolean;
   onRun: () => void;
   onDebug: () => void;
+  onRerunFailed: () => void;
   onContinue: () => void;
   onStep: () => void;
   onStop: () => void;
@@ -100,6 +111,19 @@ export function RunControls({
         <BreakpointIcon />
         <span>Debug</span>
       </button>
+      {/* Own color (teal, not Debug's amber or Run's green) so it reads as
+          a third distinct action, not a variant of either — see .run-segment__btn--rerun. */}
+      {canRerunFailed && (
+        <button
+          type="button"
+          className="run-segment__btn run-segment__btn--rerun"
+          onClick={onRerunFailed}
+          title="Rerun failed — skips nodes that already completed in the last run, retries the rest from where it stopped"
+        >
+          <RetryIcon />
+          <span>Rerun failed</span>
+        </button>
+      )}
     </div>
   );
 }
@@ -124,6 +148,15 @@ function StepIcon() {
   return (
     <svg className="run-segment__icon" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
       <path fill="currentColor" d="M2.5 3v10l5.5-5L2.5 3zm7 0v10h1.5V3H9.5zm3 0v10H14V3h-1.5z" />
+    </svg>
+  );
+}
+
+function RetryIcon() {
+  return (
+    <svg className="run-segment__icon" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+      <path fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" d="M13 8a5 5 0 1 1-1.6-3.65" />
+      <path fill="currentColor" d="M13.6 2.6l.4 3.2-3-1.2z" />
     </svg>
   );
 }

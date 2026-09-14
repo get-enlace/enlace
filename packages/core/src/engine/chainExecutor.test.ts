@@ -963,6 +963,85 @@ describe('executeChain', () => {
     expect(result.steps.find((s) => s.nodeId === 'c')?.error).toMatch(/status 500/);
   });
 
+  it('seeds a node from previousRun as already completed, reusing its step and never re-firing it', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, { fresh: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const a = node('a');
+    const b = node('b');
+    const connections: WorkflowConnection[] = [{ fromNodeId: 'a', toNodeId: 'b' }];
+    const operationsById = new Map([
+      ['a', op('a', '/a')],
+      ['b', op('b', '/b')],
+    ]);
+    const seededStepA = {
+      nodeId: 'a',
+      request: { method: 'GET', url: 'http://example.test/a', headers: {}, credentials: 'omit' as const },
+      response: { status: 200, headers: {}, body: { fromLastRun: true } },
+      timestampStart: '2026-01-01T00:00:00.000Z',
+      timestampEnd: '2026-01-01T00:00:01.000Z',
+    };
+
+    const result = await executeChain({ nodes: [a, b], connections }, operationsById, new Map(), {
+      baseUrl: 'http://example.test',
+      previousRun: { steps: [seededStepA] },
+    });
+
+    // Only b's request actually goes out — a's is skipped entirely, and b
+    // (which depends on a) still fires without waiting, proving a's seeded
+    // 'completed' status satisfies the dependency check exactly like a
+    // freshly-settled one would.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe('http://example.test/b');
+    expect(result.steps.map((s) => s.nodeId).sort()).toEqual(['a', 'b']);
+    expect(result.steps.find((s) => s.nodeId === 'a')).toBe(seededStepA);
+  });
+
+  it('re-runs a node instead of trusting its previousRun step, when that step recorded an error', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const a = node('a');
+    const operationsById = new Map([['a', op('a', '/a')]]);
+    const seededFailedStepA = {
+      nodeId: 'a',
+      request: { method: 'GET', url: 'http://example.test/a', headers: {}, credentials: 'omit' as const },
+      timestampStart: '2026-01-01T00:00:00.000Z',
+      timestampEnd: '2026-01-01T00:00:01.000Z',
+      error: 'status 500',
+    };
+
+    const result = await executeChain({ nodes: [a], connections: [] }, operationsById, new Map(), {
+      baseUrl: 'http://example.test',
+      previousRun: { steps: [seededFailedStepA] },
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.steps.find((s) => s.nodeId === 'a')).not.toBe(seededFailedStepA);
+    expect(result.steps.find((s) => s.nodeId === 'a')?.error).toBeUndefined();
+  });
+
+  it('ignores a previousRun step for a node no longer present in the workflow, instead of throwing', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const a = node('a');
+    const operationsById = new Map([['a', op('a', '/a')]]);
+    const staleStep = {
+      nodeId: 'removed-node',
+      request: { method: 'GET', url: 'http://example.test/removed', headers: {}, credentials: 'omit' as const },
+      timestampStart: '2026-01-01T00:00:00.000Z',
+      timestampEnd: '2026-01-01T00:00:01.000Z',
+    };
+
+    const result = await executeChain({ nodes: [a], connections: [] }, operationsById, new Map(), {
+      baseUrl: 'http://example.test',
+      previousRun: { steps: [staleStep] },
+    });
+
+    expect(result.steps.map((s) => s.nodeId)).toEqual(['a']);
+  });
+
   it('emits an in-flight event before a settle event for each node, with independent same-wave nodes\' in-flight events both landing before either settles', async () => {
     const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {}));
     vi.stubGlobal('fetch', fetchMock);

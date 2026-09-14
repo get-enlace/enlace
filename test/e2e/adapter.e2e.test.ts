@@ -21,7 +21,12 @@ describe('GET /enlace/api/spec', () => {
     expect(res.status).toBe(200);
 
     const spec = (await res.json()) as Record<string, any>;
-    expect(spec.servers).toEqual([{ url: 'http://localhost:4000' }]);
+    // openapi.json deliberately declares no `servers` entry — proves the
+    // adapter serves the document completely unmodified (no injected
+    // default) and exercises resolveBaseUrl's own fallback (types.test.ts),
+    // which resolves against wherever the spec was actually fetched from
+    // instead of requiring a hardcoded, per-environment absolute URL here.
+    expect(spec.servers).toBeUndefined();
     expect(spec.paths).toHaveProperty('/customers');
     expect(spec.paths).toHaveProperty('/products');
     expect(spec.paths).toHaveProperty('/orders');

@@ -1,8 +1,75 @@
 import type { StateCreator } from 'zustand';
-import { connectionKey, executeChain } from '@get-enlace/core';
+import { computeDescendants, connectionKey, executeChain } from '@get-enlace/core';
 import { referencedIncompleteCredentials } from '../../utils/workflowDocument.js';
-import type { RunControl, RunResult, RunStepRequest, RunStepStatus } from '../../types.js';
+import type {
+  RunControl,
+  RunResult,
+  RunStepRequest,
+  RunStepStatus,
+  WorkflowConnection,
+  WorkflowNode,
+} from '../../types.js';
 import { isLocked, type WorkflowState } from '../types.js';
+
+/**
+ * What "Rerun failed" (`run({ fromLastRun: true })`) seeds the next
+ * `executeChain` call with — every node from `previousRunResult` that
+ * completed without error AND isn't stale, as `ChainExecutorOptions.previousRun`.
+ * A pure function, deliberately independent of the store, so this can be
+ * unit-tested without going through a real `executeChain` call.
+ *
+ * "Stale" means: this node (or an ancestor of it) completed last run, but
+ * its config has since changed. Detected by reference, not a hash/deep-
+ * equal — every store mutation that touches a node already does
+ * `nodes.map(n => n.id === id ? {...n, field} : n)` (see graphSlice.ts),
+ * which leaves every *untouched* node's object reference exactly as it was;
+ * only an edited node gets a new one. So `lastRunNodesById.get(id) !==
+ * currentNodesById.get(id)` is an exact, free staleness check — no
+ * serialization or key-ordering pitfalls a hash-based fingerprint would
+ * carry. Staleness cascades forward via `computeDescendants`: a node
+ * downstream of an edited one may have consumed its now-stale mapped
+ * output, even though the downstream node's own config didn't change.
+ *
+ * Returns `undefined` when there's nothing to resume from (never run
+ * before this session) — callers should treat that as "run fresh," not an
+ * error; the "Rerun failed" button is also hidden in that case (see
+ * App.tsx), so this only matters as a defensive fallback.
+ */
+export function buildFromLastRunSeed(
+  nodes: WorkflowNode[],
+  connections: WorkflowConnection[],
+  previousRunResult: RunResult | null,
+  lastRunNodesById: Map<string, WorkflowNode> | null
+): RunResult | undefined {
+  if (!previousRunResult || !lastRunNodesById) return undefined;
+
+  const currentNodesById = new Map(nodes.map((n) => [n.id, n]));
+  const completedNodeIds = previousRunResult.steps.filter((s) => !s.error).map((s) => s.nodeId);
+
+  const staleNodeIds = new Set<string>();
+  for (const id of completedNodeIds) {
+    if (currentNodesById.get(id) === lastRunNodesById.get(id)) continue;
+    staleNodeIds.add(id);
+    for (const descendantId of computeDescendants(nodes, connections, id)) staleNodeIds.add(descendantId);
+  }
+
+  return { steps: previousRunResult.steps.filter((s) => !s.error && !staleNodeIds.has(s.nodeId)) };
+}
+
+/**
+ * Whether "Rerun failed" has anything to actually do — gates the button's
+ * visibility (App.tsx), not just its behavior. True when the last run left
+ * at least one node without a settled, error-free step: an explicit
+ * failure (`error` set), or a node that never got a `RunStep` at all this
+ * run (skipped, paused, never reached — or simply added to the graph since
+ * the last run, which "Rerun failed" also happily picks up, since it never
+ * re-derives resumability from *why* a node is missing).
+ */
+export function hasResumableFailure(runResult: RunResult | null, nodes: WorkflowNode[]): boolean {
+  if (!runResult) return false;
+  if (runResult.steps.length < nodes.length) return true;
+  return runResult.steps.some((s) => s.error);
+}
 
 export interface RunSlice {
   runResult: RunResult | null;
@@ -14,12 +81,28 @@ export interface RunSlice {
   isDebugRun: boolean;
   debugConsoleOpen: boolean;
   error: string | null;
+  /**
+   * Every node exactly as it was at the start of the most recent run —
+   * `run()`'s own snapshot for the *next* "Rerun failed" to diff against
+   * (see `buildFromLastRunSeed`). Reference-equal to the actual `WorkflowNode`
+   * objects that were live at that moment (not a clone) — cheap, and exactly
+   * what the staleness check needs. `null` until the first run of the
+   * session.
+   */
+  lastRunNodesById: Map<string, WorkflowNode> | null;
   toggleBreakpoint: (fromNodeId: string, toNodeId: string) => void;
   continueExecution: () => void;
   stepNode: (nodeId: string) => void;
   stopExecution: () => void;
   clearResults: () => void;
-  run: (options?: { useBreakpoints?: boolean }) => Promise<void>;
+  /**
+   * `fromLastRun`: seeds this run from the previous one (see
+   * `buildFromLastRunSeed`) so nodes that already completed — and whose
+   * config hasn't changed since — are skipped instead of re-run. Mutually
+   * exclusive with `useBreakpoints` in practice (no UI path offers both
+   * together); combining them is unsupported, not actively guarded against.
+   */
+  run: (options?: { useBreakpoints?: boolean; fromLastRun?: boolean }) => Promise<void>;
 }
 
 export const createRunSlice: StateCreator<WorkflowState, [], [], RunSlice> = (set, get) => ({
@@ -32,6 +115,7 @@ export const createRunSlice: StateCreator<WorkflowState, [], [], RunSlice> = (se
   isDebugRun: false,
   debugConsoleOpen: false,
   error: null,
+  lastRunNodesById: null,
 
   toggleBreakpoint: (fromNodeId, toNodeId) =>
     set((state) => {
@@ -60,7 +144,8 @@ export const createRunSlice: StateCreator<WorkflowState, [], [], RunSlice> = (se
 
   run: async (options) => {
     const useBreakpoints = options?.useBreakpoints ?? false;
-    const { nodes, armedBreakpoints, credentials } = get();
+    const fromLastRun = options?.fromLastRun ?? false;
+    const { nodes, connections, armedBreakpoints, credentials, runResult, lastRunNodesById } = get();
     const incomplete = referencedIncompleteCredentials(nodes, credentials);
     if (incomplete.length > 0) {
       const names = incomplete.map((c) => `"${c.name}"`).join(', ');
@@ -72,6 +157,12 @@ export const createRunSlice: StateCreator<WorkflowState, [], [], RunSlice> = (se
       });
       return;
     }
+
+    // Computed against the *previous* run's result/snapshot, before
+    // anything below overwrites either — see buildFromLastRunSeed's own
+    // doc. `undefined` for an ordinary run, or defensively when there's
+    // nothing to resume from yet.
+    const previousRun = fromLastRun ? buildFromLastRunSeed(nodes, connections, runResult, lastRunNodesById) : undefined;
 
     set({
       isRunning: true,
@@ -91,6 +182,9 @@ export const createRunSlice: StateCreator<WorkflowState, [], [], RunSlice> = (se
       // on completion (below): it's a live handle into a call that's now
       // over, not session state worth keeping around.
       previewRequestByNodeId: {},
+      // Snapshotted every run, resume or not — this run's own nodes become
+      // the reference point a *future* "Rerun failed" diffs against.
+      lastRunNodesById: new Map(nodes.map((n) => [n.id, n])),
       // activeControl deliberately NOT cleared here — it's re-set once
       // executeChain's onControl fires, a moment after this.
     });
@@ -111,7 +205,10 @@ export const createRunSlice: StateCreator<WorkflowState, [], [], RunSlice> = (se
         uploadedFiles,
         // Streams progress into the store as each node settles, instead of
         // only setting `runResult` once at the very end — see
-        // components/DebugPane/, which renders `runResult.steps` live.
+        // components/DebugPane/, which renders `runResult.steps` live. A
+        // seeded 'completed' node from `previousRun` (below) flows through
+        // this exact same path — executeChain emits for it too, so it needs
+        // no separate handling here.
         onEvent: (event) => {
           set((state) => ({
             stepStatusByNodeId: { ...state.stepStatusByNodeId, [event.nodeId]: event.status },
@@ -137,6 +234,7 @@ export const createRunSlice: StateCreator<WorkflowState, [], [], RunSlice> = (se
               armedBreakpoints: new Set(armedBreakpoints),
             }
           : {}),
+        ...(previousRun ? { previousRun } : {}),
       });
       set({ runResult: result });
     } catch (err) {
