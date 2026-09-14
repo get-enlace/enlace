@@ -2,7 +2,7 @@
   "name": "enlace",
   "private": true,
   "version": "0.1.0",
-  "description": "Enlace — a visual, chained-execution canvas that plugs into an existing OpenAPI-documented API. This repo hosts @get-enlace/core (portable engine), @get-enlace/ui (canvas), plus an example API for local testing. Adapters (Express, ...) live in github.com/get-enlace/enlace-js.",
+  "description": "Enlace — an interactive visual execution graph for OpenAPI 3.x APIs. Drag endpoints onto a canvas, wire inputs to outputs, and run multi-step workflows concurrently in your browser.",
   "license": "MIT",
   "repository": {
     "type": "git",

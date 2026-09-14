@@ -1,60 +1,113 @@
-# Contributing to enlace
+# Contributing to Enlace
 
-## Development
+Thank you for your interest in contributing to **Enlace**! Whether you are fixing a bug, adding an adapter, improving the canvas UX, or refining documentation, your contributions are welcome.
+
+---
+
+## Code of Conduct
+
+We are committed to providing a welcoming, inclusive, and harassment-free environment for everyone. Please be respectful and constructive in all issues, pull requests, and discussions.
+
+---
+
+## How Can I Contribute?
+
+### 1. Reporting Bugs
+- Search existing [GitHub Issues](https://github.com/get-enlace/enlace/issues) to make sure your bug has not already been reported.
+- If it hasn't, open a new issue using the **Bug Report** template.
+- Include your environment (browser, OS, adapter version), clear steps to reproduce, and a minimal OpenAPI spec snippet if possible.
+
+### 2. Suggesting Enhancements
+- Check [Roadmap](https://github.com/get-enlace/enlace/blob/main/ROADMAP.md) and open issues to see if your idea is already being explored.
+- Open a new issue using the **Feature Request** template describing the problem and your proposed solution.
+
+### 3. Improving Documentation
+- Documentation lives at [`get-enlace.github.io`](https://github.com/get-enlace/get-enlace.github.io).
+- Typos, clearer quickstart guides, and adapter usage examples are always appreciated!
+
+### 4. Code Contributions
+- For non-trivial features or architecture changes, please open an issue first to discuss the approach before investing significant coding time.
+- For small bug fixes and polish, feel free to open a Pull Request directly.
+
+---
+
+## Local Development Setup
+
+### Prerequisites
+- **Node.js**: `>= 18.0.0`
+- **npm**: `>= 9.0.0`
+
+### Setup
+
+Clone the repository and install dependencies:
 
 ```bash
+git clone https://github.com/get-enlace/enlace.git
+cd enlace
 npm install
-
-npm start        # sample API + adapter + canvas, one process
-                  # -> http://localhost:4000/enlace
-                  # -> http://localhost:4000/api-docs (the sample API's own Swagger UI)
-
-npm run dev --workspace @get-enlace/ui   # canvas with hot reload, for iterating on the UI itself
-                                           # -> http://localhost:5173
-
-npm test              # unit tests: @get-enlace/core (Node) then @get-enlace/ui (jsdom), then root
-npm run test:e2e       # real HTTP e2e tests against examples/sample-api's enlace.ts
-npm run test:e2e-ui    # Playwright smoke test (needs `npx playwright install --with-deps chromium` once)
-npm run typecheck
-npm run build          # builds @get-enlace/core then @get-enlace/ui (vite)
 ```
 
-`npm start`'s `predev` hook builds the UI bundle automatically on first run
-if it's missing (`npm run build` — core then UI); run `npm run build:ui`
-manually after editing canvas code outside the hot-reload dev server.
+### Running Locally
 
-See [`ARCHITECTURE.md`](ARCHITECTURE.md) for how the codebase is designed —
-useful context before making a non-trivial change.
+```bash
+# 1. Start the integrated dev harness (sample API + mock OAuth2 server + canvas)
+npm start
+# -> Canvas UI:       http://localhost:4000/enlace
+# -> Mock Swagger UI: http://localhost:4000/api-docs
+# -> Mock OAuth2:     http://localhost:4001
 
-## CI/CD
+# 2. Or start the Vite hot-reloading dev server for rapid UI iteration:
+npm run dev --workspace @get-enlace/ui
+# -> Hot Reload UI:   http://localhost:5173
+```
 
-- **`.github/workflows/pr.yml`** — every PR: typecheck, unit tests, the
-  real e2e suite, and the Playwright smoke test.
-- **`.github/workflows/main.yml`** — one pipeline, every push to `main`.
-  `deploy-dev` always runs first: builds, publishes `@get-enlace/ui@dev` to
-  GitHub Packages, tags the build. (`@get-enlace/core` is a private
-  workspace package, bundled into the UI — not published.) `deploy-prod`
-  then queues right behind it (`needs: deploy-dev`) — gated behind the
-  `production` environment's required-reviewer approval, it pauses until
-  someone approves it, then publishes whatever version is currently
-  committed in `packages/ui/package.json` to public npmjs.org, tags the
-  release, and bumps the patch version for next time — same shape as
-  `enlace-js`/`enlace-dotnet`'s own `deploy-prod` jobs. No separate
-  tag-push trigger. `notify-downstream-dev` / `notify-downstream-prod` each
-  fire independently right after their own publish job succeeds (split in
-  two so a pending prod approval can't delay the dev notification): fans
-  out a `repository_dispatch: enlace-ui-release` to every known adapter
-  repo (currently `enlace-js`, `enlace-dotnet`, `enlace-java`,
-  `enlace-python`), so each can decide for itself whether it needs to
-  fetch the new build.
+### Running Tests & Verification
 
-One-time setup this needs, done in the repo's GitHub settings, not in code:
-- A `development` environment and a `production` environment (the latter
-  with a required reviewer) under **Settings → Environments** — already
-  created.
-- Still outstanding: an `NPM_TOKEN` secret (a public npmjs.org token) on
-  the `production` environment, and a `CROSS_REPO_PAT` secret (scoped to
-  trigger `repository_dispatch` on
-  `enlace-js`/`enlace-dotnet`/`enlace-java`/`enlace-python`) available to
-  the `notify-downstream-*` jobs. `GITHUB_TOKEN` (used for the GitHub
-  Packages dev channel) is automatic — no setup needed.
+Before submitting code, ensure all test suites and typechecks pass:
+
+```bash
+npm run typecheck       # TypeScript checks across all workspaces
+npm test                # Unit tests: @get-enlace/core (Node) & @get-enlace/ui (jsdom)
+npm run test:e2e        # HTTP integration tests against sample API
+npm run test:e2e-ui     # Playwright UI smoke tests (requires `npx playwright install chromium`)
+npm run build           # Full build: @get-enlace/core -> @get-enlace/ui
+```
+
+---
+
+## Git Workflow & Conventional Commits
+
+1. **Fork & Branch**:
+   - Branch off `main`:
+     - `feat/your-feature-name`
+     - `fix/issue-description`
+     - `docs/what-changed`
+
+2. **Commit Messages**:
+   We follow [Conventional Commits](https://www.conventionalcommits.org/):
+   - `feat(canvas): add zoom-to-fit button`
+   - `fix(executor): handle empty array response in JSONPath mapping`
+   - `docs(readme): add FastAPI quickstart snippet`
+   - `chore(deps): update react-flow to latest`
+
+3. **Submitting a Pull Request**:
+   - Open a PR against `main`.
+   - Fill out the PR template with a clear explanation of changes and screenshots/GIFs for UI changes.
+   - Ensure GitHub Actions CI checks pass.
+
+---
+
+## Architecture Context
+
+Enlace is structured as an npm workspace monorepo:
+- **`packages/core`** (`@get-enlace/core`): Headless execution engine (spec parsing, Kahn's algorithm DAG runner, JSONPath resolution, credential injection). Zero React/DOM dependencies.
+- **`packages/ui`** (`@get-enlace/ui`): React Flow visual canvas, node inspector, interactive step debugger, and IndexedDB local autosave. Bundles `@get-enlace/core` at build time.
+- **`examples/sample-api`**: Self-contained dev harness with mock OAuth2 server for local testing.
+
+For a comprehensive technical deep-dive into the design decisions, read [`ARCHITECTURE.md`](ARCHITECTURE.md).
+
+---
+
+## Questions?
+
+Need help or want to discuss an idea? Feel free to open a [Discussion](https://github.com/get-enlace/enlace/discussions) or join our community channels!

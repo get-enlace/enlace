@@ -1,28 +1,30 @@
 # @get-enlace/core
 
-Portable Enlace chain-execution engine — no React, no DOM, no CSS.
+Portable Enlace chain-execution engine — zero React, DOM, or CSS dependencies.
 
-**Workspace-only** — not published to npm. The UI (and a future CLI in this
-repo) depend on it via the npm workspace and bundle it at build time. Flip
-`private` and restore publish wiring later if an external consumer needs it.
+This is a private monorepo workspace package consumed by `@get-enlace/ui` and future headless runners (such as a CLI). It is bundled into `@get-enlace/ui` at build time.
 
-## What it is
+---
 
-Spec parsing, dependency graph, credential injection (bearer / basic / apiKey /
-OAuth2 token fetch), raw-body tag resolution, `executeChain`, and password
-encryption/decryption for `.enlace` full-credential exports (Web Crypto /
-AES-GCM).
+## Capabilities
 
-## Node
+- **OpenAPI 3.x Spec Parsing**: Discovers paths, operations, parameters, request bodies, and response schemas.
+- **Dependency Graph Compilation**: Evaluates explicit connections and implicit dependencies (assert checks, credential overrides) into an executable DAG.
+- **Kahn's Algorithm Concurrency**: Detects cycles and calculates execution levels for concurrent readiness-driven branch dispatch.
+- **Request Resolution**: Inlines scalar parameters, constructs raw JSON bodies, substitutes JSONPath tags, and generates `$rand.*` dynamic expressions.
+- **Zero-Trust Credential Injection**: Resolves Bearer, Basic, API Key, and OAuth2 tokens directly into outgoing request payloads.
+- **Cryptographic Serialization**: Implements PBKDF2 / AES-256-GCM encryption and decryption for `.enlace` export collections using Web Crypto (`crypto.subtle`).
 
-Requires Node `>=18` (`fetch`, `FormData`, `File`, `btoa`, `crypto.subtle`).
+---
 
-## Cookie credentials
+## Environment Requirements
 
-`cookie` type still resolves to `{ credentials: 'include' }` for the browser.
-A future CLI should reject workflows that use it — core stays environment-dumb.
+- **Node.js**: `>= 18.0.0` (requires global `fetch`, `FormData`, `File`, and `crypto.subtle`).
+- Also executes seamlessly in all modern evergreen browsers (Chrome, Firefox, Safari, Edge).
 
-## Develop
+---
+
+## Development & Testing
 
 ```bash
 npm test --workspace @get-enlace/core

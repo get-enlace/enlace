@@ -1,41 +1,127 @@
-<h1>
-  <img src="https://raw.githubusercontent.com/get-enlace/.github/refs/heads/main/brand/svgs/icon-full-100.svg" alt="" style="width: 32px; height: 32px; vertical-align: middle;"> Enlace
-</h1>
+<div align="center">
+  <img src="https://raw.githubusercontent.com/get-enlace/.github/refs/heads/main/brand/svgs/icon-full-100.svg" alt="Enlace Logo" width="64" height="64" />
+  <h1>Enlace</h1>
+  <p><strong>Turn your OpenAPI spec into an interactive visual execution graph.</strong></p>
+  <p>Drag endpoints onto a canvas, wire inputs to outputs, and run multi-step API workflows concurrently — 100% in your browser.</p>
 
-A visual, chained-execution canvas for any OpenAPI-documented API. Drag
-operations onto a canvas, wire the output of one call into the input of the
-next, and run the whole chain — independent branches execute concurrently —
-directly from your browser.
+  <p>
+    <a href="https://github.com/get-enlace/enlace/releases"><img src="https://img.shields.io/github/v/release/get-enlace/enlace?color=blue&label=release" alt="Release" /></a>
+    <a href="https://www.npmjs.com/package/@get-enlace/ui"><img src="https://img.shields.io/npm/v/@get-enlace/ui?color=brightgreen&label=npm%20%40get-enlace%2Fui" alt="npm version" /></a>
+    <a href="https://enlace-fastapi.onrender.com/enlace/"><img src="https://img.shields.io/badge/demo-live%20on%20render-success" alt="Live Demo" /></a>
+    <a href="https://get-enlace.github.io/"><img src="https://img.shields.io/badge/docs-get--enlace.github.io-informational" alt="Documentation" /></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" /></a>
+  </p>
 
-Enlace only needs one thing: a valid OpenAPI 3.x document. It doesn't care
-what produced or serves it — swagger-ui-express, Swashbuckle, Springdoc, a
-hand-written file, anything.
+  <p>
+    <a href="https://enlace-fastapi.onrender.com/enlace/"><strong>🚀 Try the Live Demo</strong></a> •
+    <a href="https://get-enlace.github.io/"><strong>📖 Documentation</strong></a> •
+    <a href="https://github.com/get-enlace/enlace"><strong>⭐ Star on GitHub</strong></a>
+  </p>
+</div>
 
-## What's here
+<br />
 
-- **`packages/core`** (`@get-enlace/core`) — portable chain-execution
-  engine: spec parsing, dependency graph, credential injection, and
-  `executeChain`. No React/DOM. Private workspace package (not published);
-  used by the UI today, later a headless CLI.
-- **`packages/ui`** (`@get-enlace/ui`) — the canvas itself: the
-  operations list, the drag-and-drop canvas, the node inspector for field
-  mapping and credentials, and the debug pane. Depends on workspace
-  `@get-enlace/core` (bundled into the browser build; core is not published).
-  All of it runs client-side, in the browser.
-- **`examples/sample-api`** — a small sample API (three cross-referencing
-  CRUD resources) plus a dev harness, so you can try Enlace immediately
-  without wiring up anything of your own. Mounts the canvas via
-  `examples/sample-api/enlace.ts`, a small local copy of
-  `@get-enlace/express`'s mount function (see below) — self-contained, no
-  cross-repo dependency needed to run this repo's own dev server or tests.
+<div align="center">
+  <img src="https://raw.githubusercontent.com/get-enlace/get-enlace.github.io/main/static/img/screenshots/canvas-chain-built.jpg" alt="Enlace Canvas Chained Execution" width="90%" style="border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.15);" />
+</div>
 
-Adapters (Express, and eventually Nest/Fastify/...) live in a separate
-repo, [`get-enlace/enlace-js`](https://github.com/get-enlace/enlace-js) —
-each is a thin package serving the OpenAPI document and this package's
-built UI bundle in its own ecosystem's idiomatic way. Nothing here depends
-on that repo; it depends on `@get-enlace/ui`, published from here.
+<br />
 
-## Quickstart
+## Why We Built Enlace
+
+Modern APIs don't operate in silos, but the tools we use to test and explore them often do.
+
+When testing a real-world scenario—such as creating a user, generating an auth token, creating an order with that user's ID, and processing a payment—developers usually find themselves caught between two extremes:
+
+- **Single-endpoint doc viewers (like Swagger UI)** are fantastic for quick, one-off exploration and "Try it out" requests. But the moment a workflow requires chaining three or four calls together, you're stuck juggling multiple browser tabs, manually copy-pasting generated IDs, and re-authenticating across endpoints.
+- **Full-featured API clients (like Postman or Insomnia)** can chain requests, but doing so requires writing boilerplate JavaScript pre-request/test scripts (`pm.environment.set`), managing environment variables, and maintaining separate external collections outside of your codebase.
+- **Ad-hoc glue scripts** (`curl`, Python, bash) solve the automation, but they are throwaway, tedious to maintain, and lack visual feedback.
+
+### The Missing Middle Ground
+
+We built **Enlace** to live right in the sweet spot between single-call documentation and script-heavy API clients:
+
+- **Zero Setup & Native to Your Code**: Mounts directly into your existing backend (FastAPI, Express, NestJS, ASP.NET Core, Spring Boot) in two lines of code, reading directly from your application's OpenAPI document.
+- **Visual & Declarative**: Drag endpoints onto an infinite canvas and connect response fields into request parameters with live JSONPath autocomplete (`{{tag}}`) — no pre-request scripts or code needed.
+- **Concurrent by Default**: Independent branches execute in parallel via Kahn’s algorithm DAG level-ordering, rather than strictly sequential loops.
+- **100% In-Browser & Zero-Trust**: Everything runs client-side. Your secrets and tokens stay in browser memory, requests fire directly from your browser to your API, and nothing is proxied through an external server.
+
+Enlace only needs one thing: **a valid OpenAPI 3.x document**. It works with FastAPI, Swashbuckle, Springdoc, NestJS, Express, or any hand-written spec.
+
+---
+
+## ⚡ 2-Line Quickstart
+
+Mount Enlace into your existing backend with just two lines of code:
+
+### Python (FastAPI)
+```bash
+pip install enlace-fastapi
+```
+```python
+from enlace_fastapi import enlace
+
+enlace(app, spec=app.openapi())
+```
+
+### Node.js (Express)
+```bash
+npm install @get-enlace/express
+```
+```typescript
+import { enlace } from '@get-enlace/express';
+
+app.use('/enlace', enlace({ spec: openApiDoc }));
+```
+
+### Node.js (NestJS)
+```bash
+npm install @get-enlace/nest
+```
+```typescript
+import { EnlaceModule } from '@get-enlace/nest';
+
+@Module({ imports: [EnlaceModule.forRoot({ spec: openApiDoc })] })
+export class AppModule {}
+```
+
+### C# / .NET (ASP.NET Core)
+```bash
+dotnet add package Enlace.AspNetCore
+```
+```csharp
+app.UseEnlace();
+```
+
+### Java (Spring Boot 3)
+```xml
+<dependency>
+    <groupId>io.github.get-enlace</groupId>
+    <artifactId>enlace-spring-boot-starter</artifactId>
+    <version>0.0.9</version>
+</dependency>
+```
+*Autoconfigured automatically at `/enlace` alongside Springdoc.*
+
+---
+
+## 🌟 Key Features
+
+| Feature | Description |
+| :--- | :--- |
+| ⚡ **Concurrent Execution** | Independent DAG branches execute in parallel via Kahn's algorithm level-ordering. Slow endpoints never block unrelated sibling requests. |
+| 🔒 **Zero-Trust Security** | All requests fire directly from the browser `fetch()`. Bearer tokens and secrets stay in browser memory and are automatically redacted from logs. The adapter never proxies execution traffic. |
+| 💾 **IndexedDB Persistence** | Workflows, layouts, node groups, and last-run execution outputs survive browser refreshes automatically with zero database setup. |
+| 🐞 **Interactive Debugger** | Double-click any connector edge to arm breakpoints. Preview resolved pre-flight requests before firing, pause/step/continue, or use **Debug failed** to resume from a failure point. |
+| 🏷️ **Raw JSON & JSONPath** | Full raw JSON editing with schema autocomplete. Insert dynamic `{{tag}}` chips referencing upstream responses and generate random data with `$rand.*`. |
+| 🧩 **Preset Nodes** | Insert **Wait** pacing timers or multi-condition **Assert** verification checks into your chain. |
+| 📦 **Portable Exports** | Export workflows as `.enlace` JSON. Optional **Full credentials** export uses client-side Web Crypto PBKDF2 / AES-256-GCM encryption. |
+
+---
+
+## 🧪 Try It Locally (Sample API Harness)
+
+You can clone this repository and run the self-contained development harness immediately:
 
 ```bash
 git clone https://github.com/get-enlace/enlace.git
@@ -44,78 +130,48 @@ npm install
 npm start
 ```
 
-Open `http://localhost:4000/enlace`.
+This launches:
+- **Canvas UI**: [http://localhost:4000/enlace](http://localhost:4000/enlace)
+- **Sample API Swagger UI**: [http://localhost:4000/api-docs](http://localhost:4000/api-docs)
+- **Mock OAuth2 Issuer**: `http://localhost:4001`
 
-## How it works
+### 1. Parallel Execution Walkthrough
+1. Drag onto the canvas: `POST /customers` (A), `PATCH /customers/{id}` (B), `POST /products` (C), `POST /orders` (D).
+2. Connect box-to-box: `A → B`, `A → C`, `A → D`, `C → D`.
+3. In B: map `path.id` from `A.id`.
+4. In D: map `body.customerId` from `A.id`, and `body.productId` from `C.id`.
+5. Click **Run**: Calls A fires first, then **B and C fire concurrently**, and once both resolve, D executes.
 
-- **Connection vs. mapping.** Drag box-to-box on the canvas to set execution
-  *order*; use the Node Inspector's "Map from..." picker to wire a field's
-  *data source* from any upstream node in that connection graph, not just
-  the one immediately before it.
-- **Concurrent execution.** Nodes are grouped into dependency-ordered
-  levels; everything within a level fires concurrently. A chain like
-  "A, then B+C in parallel, then D (needs A and C, not B)" really does run
-  B and C at the same time, not just in a permissive order.
-- **Credentials stay in your browser.** Bearer tokens live in browser
-  memory for the session and are attached directly to outgoing requests —
-  they're never sent to or stored by the adapter, and the debug pane
-  redacts them before ever rendering.
-- **The adapter's job is small.** It just serves the OpenAPI document and
-  the UI bundle. The browser works out the target base URL itself: an
-  explicit `servers[0].url` in the spec is honored as-is (this is how you
-  point Enlace at a different origin than the adapter — e.g. a target API
-  behind CORS), but a spec doesn't need one at all — with `servers` missing
-  or relative, requests default to wherever the spec document was actually
-  served from, so the same spec works unmodified across every environment
-  you deploy to. Everything else — resolving fields, firing requests,
-  showing results — happens entirely in the browser.
+### 2. Interactive Breakpoint Walkthrough
+1. **Double-click** the connector line between `A` and `C`. A red dot appears, indicating an armed breakpoint.
+2. Click **Debug** (or Run).
+3. Execution runs step A, then pauses before step C fires.
+4. Inspect the pre-flight preview in the **Debugger** pane, then click **Step** or **Continue** to resume.
 
-## Try the parallel-execution demo
+---
 
-`examples/sample-api` is deliberately shaped for this: **A** (create a
-customer), then **B + C run concurrently** (B updates that customer, C
-creates a product — independent of each other), then **D** (create an
-order) needs data from **A and C, not B**.
+## 📂 Ecosystem Repositories
 
-1. `npm start`, open `http://localhost:4000/enlace`.
-2. Drag onto the canvas: `POST /customers` (A), `PATCH /customers/{id}` (B), `POST /products` (C), `POST /orders` (D).
-3. Fill A's `name`/`email` and C's `name`/`price` with any static values.
-4. Connect box-to-box (drag right handle → left handle): A→B, A→C, A→D, C→D.
-5. On B: set `path.id` to "Map from..." → A → `id`; give `status` a static value like `"verified"`.
-6. On D: set `body.customerId` to "Map from..." → A → `id`, and `body.productId` to "Map from..." → C → `id`; give `qty` a static value.
-7. Click **Run**. All 4 calls come back green, in the order A, B, C, D — but B and C actually fire concurrently (see `executeChain` in `packages/core/src/engine/chainExecutor.ts`).
+Enlace is organized into dedicated repositories per ecosystem:
 
-## Try the credentials demo
+- **[`get-enlace/enlace`](https://github.com/get-enlace/enlace)** — Anchor repository (Canvas UI & Execution Engine).
+- **[`get-enlace/enlace-python`](https://github.com/get-enlace/enlace-python)** — FastAPI adapter (`enlace-fastapi`).
+- **[`get-enlace/enlace-js`](https://github.com/get-enlace/enlace-js)** — Express (`@get-enlace/express`) & NestJS (`@get-enlace/nest`) adapters.
+- **[`get-enlace/enlace-dotnet`](https://github.com/get-enlace/enlace-dotnet)** — ASP.NET Core adapter (`Enlace.AspNetCore`).
+- **[`get-enlace/enlace-java`](https://github.com/get-enlace/enlace-java)** — Spring Boot starter (`enlace-spring-boot-starter`).
+- **[`get-enlace/enlace-examples`](https://github.com/get-enlace/enlace-examples)** — Cross-language conformance sample apps.
+- **[`get-enlace/get-enlace.github.io`](https://github.com/get-enlace/get-enlace.github.io)** — Documentation site and guides.
 
-Each of `examples/sample-api`'s write operations requires a *different*
-credential type, genuinely enforced server-side — not decoration. `npm
-start` also boots a local mock OAuth2 issuer
-([`oauth2-mock-server`](https://github.com/axa-group/oauth2-mock-server),
-on port 4001) so the two OAuth2 types are a real signed-JWT round trip, not
-a stub. The Cookie type isn't backed by the mock issuer — it's a plain
-`GET /auth/demo-login` endpoint that sets a session cookie directly, no
-redirect required:
+---
 
-| Operation | Requires | Story |
-|---|---|---|
-| `POST /customers` | Basic auth | back-office tool creates the record |
-| `PATCH`/`DELETE /customers/{id}` | Bearer token | the customer's own session token |
-| `POST /orders` | API key (header) | a POS/kiosk integration |
-| `POST`/`PATCH`/`DELETE /products/{id}` | OAuth2 (password grant) | **only an admin**, logging in with their own username/password, can manage the catalog |
-| `DELETE /orders/{id}` | OAuth2 (client credentials) | an automated cleanup job — service-to-service, no human login |
-| `PATCH /orders/{id}` | Cookie (session) | a support agent, already logged into the internal support portal in another browser tab, updates an order's status |
+## 🛠️ Architecture & Contributing
 
-The mock issuer accepts *any* client id/secret or username/password — it's
-not really authenticating anyone, just proving the actual protocol
-round-trip (POST for a token, verify its signature, attach it) works.
+- Read [`ARCHITECTURE.md`](ARCHITECTURE.md) for a technical deep-dive into the client-side execution model, data model, and security guarantees.
+- Read [`CONTRIBUTING.md`](CONTRIBUTING.md) for instructions on local setup, running tests, and submitting pull requests.
 
-1. Continue from the parallel-execution demo above (or start fresh — either works).
-2. Open the **Credentials** drawer (topbar). Under "Declared in spec" you'll see all six schemes read straight from `openapi.json`, tokenUrl and all — click "Configure" on each and just fill in the missing name/secret field(s) (any value works). `cookieAuth` is the exception: it needs nothing but a name to save. Its optional Login page URL field is just a bookmark — set it to `http://localhost:4000/auth/demo-login` and use "Open login page ↗" (on the form, and again later on the saved card) to actually set the session cookie before running the `PATCH /orders/{id}` node.
-3. Attach each credential to the matching node via the lock icon next to the operation in its inspector, then **Run**.
-4. To see the enforcement actually bite: leave one node's credential unset (or attach the wrong type) and Run again — that step comes back red with a 401, while the debug pane still redacts whatever credential *was* sent on the others.
+---
 
-## Learn more
+## 📄 License
 
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — how Enlace is designed and why.
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — local development setup, test
-  commands, and how CI/CD works.
+Enlace is open-source software licensed under the [MIT License](LICENSE).  
+Copyright (c) 2026 The Enlace Authors.

@@ -1,291 +1,207 @@
-# Enlace — Architecture Document
+# Enlace Architecture
 
-## 1. Design Principles
+This document specifies the architecture, data model, security boundaries, and execution semantics of **Enlace** — an interactive visual execution graph for OpenAPI 3.x APIs.
 
-1. **Depend on OpenAPI, not on Swagger UI.** The only input contract is "a URL, file, or object that resolves to a valid OpenAPI 3.x document." No dependency on Swagger UI, Swashbuckle, Springdoc, or any specific spec-generation toolchain.
-2. **One UI, executed where Swagger UI already executes: the browser.** Chain execution (HTTP calls, field resolution, ordering) runs entirely client-side — the same trust model Swagger UI's own "Try it out" already uses, extended from one call to a chain of them.
-3. **Adapters are thin, symmetric across languages.** Each adapter serves the UI's static bundle and resolves/serves the OpenAPI document. Nothing else varies by language.
-4. **No server-side engine.** Execution is UI work (client-side, in the browser); persistence, once built, is adapter work (per-language CRUD). There's no stateful, complex logic that needs porting or sidecar-hosting across languages.
-5. **Trust model matches Swagger UI's own.** No per-user auth inside the tool; whoever can reach the URL has the same access Swagger UI's "Authorize" button already implicitly grants.
+---
 
-## 2. High-Level Component Diagram
+## 1. System Vision & Design Principles
+
+1. **OpenAPI-First Contract**: The sole input requirement for Enlace is a valid OpenAPI 3.x document (JSON or YAML). Enlace is agnostic to how that document was generated (FastAPI, Swashbuckle, Springdoc, NestJS Swagger, or hand-written).
+2. **100% Client-Side Execution**: All HTTP execution, field mapping, dependency resolution, and credential injection execute directly within the user's browser. There is no server-side execution engine, proxy, or orchestration backend.
+3. **Thin, Symmetric Adapters**: Language adapters (Python, Node.js, .NET, Java) are intentionally lightweight and symmetric. Each adapter only has two responsibilities:
+   - Serve the pre-compiled `@get-enlace/ui` static bundle.
+   - Resolve and serve the application's OpenAPI document.
+4. **Zero-Trust Credential Isolation**: Authenticating secrets (Bearer tokens, API keys, Basic auth, OAuth2 tokens) live exclusively in browser session memory. Credentials are never written to unencrypted storage, never logged, and never routed through the adapter.
+5. **Deterministic Concurrency**: Workflows are directed acyclic graphs (DAGs). Independent branches execute concurrently using Kahn's algorithm for level-ordering and per-node readiness resolution.
+
+---
+
+## 2. Component Topology & Traffic Boundaries
+
+Enlace enforces two distinct HTTP relationships that never cross:
 
 ```
-                     ┌───────────────────────────────────┐
-                     │   Browser (all execution here)    │
-                     │                                   │
-                     │  @get-enlace/ui (React canvas):   │
-                     │   - Canvas (nodes, connections)   │
-                     │   - Node inspector (fields, creds)│
-                     │   - Debug pane                    │
-                     │   uses @get-enlace/core:          │
-                     │       resolve order, resolve      │
-                     │       field values, fetch() calls │
-                     └───────────────┬───────────────────┘
+                     ┌────────────────────────────────────────┐
+                     │       Browser (Client-Side Only)       │
+                     │                                        │
+                     │  @get-enlace/ui (React Flow Canvas)    │
+                     │   - Node Inspector & Raw JSON Editor   │
+                     │   - IndexedDB Persistence Layer        │
+                     │   - Interactive Breakpoint Debugger    │
+                     │                                        │
+                     │  @get-enlace/core (Execution Engine)   │
+                     │   - Spec parser & dependency DAG       │
+                     │   - Kahn's algorithm concurrency       │
+                     │   - Request building & JSONPath tags   │
+                     └───────────────┬────────────────────────┘
                                      │
-             ┌───────────────────────┼──────────────────────────┐
-             │ HTTP (spec)                                      │ HTTP (direct calls,
-             │                                                  │ browser → target API)
-             ▼                                                  ▼
-   ┌────────────────────────────────┐                      ┌───────────────────────┐
-   │  Adapter (Express today,       │                      │  User's own target API│
-   │  more planned)                 │                      │  (any language)       │
-   │                                │                      └───────────────────────┘
-   │  - Serves UI static bundle     |
-   │  - Serves/proxies OpenAPI doc  |
-   └────────────────────────────────┘
+             ┌───────────────────────┴─────────────────────────┐
+             │ HTTP (Spec & Static UI Bundle)                  │ HTTP (Direct Execution Calls)
+             ▼                                                 ▼
+   ┌───────────────────────────┐                     ┌───────────────────────────┐
+   │ Language Framework Adapter│                     │     Target API Under      │
+   │ (FastAPI, Express, Nest,  │                     │           Test            │
+   │  ASP.NET Core, Spring)    │                     │  (Any language / origin)  │
+   │                           │                     └───────────────────────────┘
+   │ - Mounts /enlace route    │
+   │ - Resolves openapi.json   │
+   └───────────────────────────┘
 ```
 
-Two distinct HTTP relationships exist, and they don't cross: the browser talks to its own adapter for UI assets and the spec; separately, the browser talks directly to the target API to execute chain steps. The adapter never proxies execution calls.
+1. **Browser ↔ Adapter**: The browser requests the Enlace UI bundle and the target OpenAPI document from the adapter.
+2. **Browser ↔ Target API**: All workflow execution calls fire **directly** from the browser `fetch()` to the target API endpoints. The adapter never acts as an API gateway or reverse proxy.
 
-The **target API** being tested can be written in any language — the browser only ever talks to it over plain HTTP, per the OpenAPI spec. Language dependence only exists on the *hosting* side (what serves the canvas UI and spec), not the target API side.
+---
 
-## 3. Repo/Package Layout
+## 3. Repository & Package Ecosystem
 
-| Package | Language | Repo | Responsibility |
-|---|---|---|---|
-| `core` (`@get-enlace/core`) | JS (Node ≥18, no React/DOM) | `get-enlace/enlace` (this repo) | Spec parsing, dependency graph, credential injection, `executeChain`. Private workspace package (not published); bundled into the UI today, later a headless CLI. |
-| `ui` (`@get-enlace/ui`) | JS (framework-agnostic bundle) | `get-enlace/enlace` (this repo) | Canvas, inspector, debug pane. Depends on `@get-enlace/core` at build time. Built once, shipped as static assets consumed by every adapter. |
-| `enlace-express` (`@get-enlace/express`) | Node/TS | [`get-enlace/enlace-js`](https://github.com/get-enlace/enlace-js) | Serves the UI bundle, resolves the OpenAPI document. |
+The Enlace ecosystem consists of modular, decoupled components:
 
-Both packages live in this repo (`packages/core`, `packages/ui`), alongside a
-sample API and dev harness (`examples/sample-api`) for trying Enlace
-without wiring up anything of your own — that harness mounts the canvas
-via a small local copy of `@get-enlace/express`'s mount function
-(`examples/sample-api/enlace.ts`), not a dependency on the adapter repo,
-so this repo's own dev/test loop stays self-contained.
+| Component | Repository | Role | Technology |
+| :--- | :--- | :--- | :--- |
+| **Engine & Canvas** | [`get-enlace/enlace`](https://github.com/get-enlace/enlace) | Anchor repository. Houses the headless engine (`@get-enlace/core`) and the canvas UI (`@get-enlace/ui`). | TypeScript, React, React Flow, Zustand, Vite |
+| **Python Adapter** | [`get-enlace/enlace-python`](https://github.com/get-enlace/enlace-python) | FastAPI adapter (`enlace-fastapi`). | Python, `uv` workspace |
+| **Node.js Adapters** | [`get-enlace/enlace-js`](https://github.com/get-enlace/enlace-js) | Express (`@get-enlace/express`) and NestJS (`@get-enlace/nest`) adapters. | TypeScript, npm monorepo |
+| **.NET Adapter** | [`get-enlace/enlace-dotnet`](https://github.com/get-enlace/enlace-dotnet) | ASP.NET Core middleware (`Enlace.AspNetCore`). | C# / .NET 8 |
+| **Java Adapter** | [`get-enlace/enlace-java`](https://github.com/get-enlace/enlace-java) | Spring Boot 3 starter (`enlace-spring-boot-starter`). | Java 17+, Spring Boot 3 |
+| **Conformance Suite** | [`get-enlace/enlace-examples`](https://github.com/get-enlace/enlace-examples) | Cross-framework validation apps implementing the uniform [`CONTRACT.md`](https://github.com/get-enlace/enlace-examples/blob/main/CONTRACT.md). | Multi-language |
+| **Documentation** | [`get-enlace.github.io`](https://github.com/get-enlace/get-enlace.github.io) | Project website, user guides, and reference docs. | Docusaurus, TypeScript |
 
-Node/JS adapters (`@get-enlace/express` today, `@get-enlace/nest` /
-`@get-enlace/fastify` planned) live together in `get-enlace/enlace-js`, a
-separate repo with its own CI and its own dev-publish workflow, each
-installing `@get-enlace/ui` from GitHub Packages rather than as a
-workspace sibling. Non-Node adapters (`.NET`, Java) will each get their
-own repo per the language's own ecosystem conventions.
+---
 
-None of these need to talk to each other, to a shared engine process, or to any particular runtime beyond their own — each adapter is a self-contained, idiomatic package in its own ecosystem, exactly matching how Springdoc and Swashbuckle each independently serve the same Swagger UI bundle without any cross-language coordination.
+## 4. Core Data Model
 
-## 4. Data Model
+The data model cleanly separates the execution workflow from visual canvas chrome.
 
-Core types (owned by `@get-enlace/core`, re-exported by the UI), used identically regardless of adapter:
-
-```
-Operation (derived from the spec, not stored — read fresh each load) {
-  id: string              // e.g. "POST /orders"
-  method: string
-  path: string
-  parameters: OperationParameter[]
-  requestBodySchema: object | null
-  responseSchema: object | null
+```typescript
+/** An operation discovered from the OpenAPI spec */
+interface Operation {
+  id: string; // e.g. "POST /orders"
+  method: string;
+  path: string;
+  parameters: OperationParameter[];
+  requestBodySchema: object | null;
+  responseSchema: object | null;
 }
 
-// A real discriminated union on `kind` (OperationNode | PresetsNode, same
-// pattern as `Preset`/`Credential` below) — `id`/`credentialId` stay on a
-// shared base both variants extend, since almost every existing "any
-// WorkflowNode" consumer only ever needs those two; only code that actually
-// cares which kind it has narrows further. `credentialId` goes unused on a
-// PresetsNode (it never fires its own request), kept there anyway so
-// reading a node's `id` never requires a kind check.
-WorkflowNode = OperationNode | PresetsNode
+/** Discriminated union of executable canvas nodes */
+type WorkflowNode = OperationNode | PresetsNode;
 
-// The request body is one shared Raw JSON section (RawBodyEditor.tsx) — a
-// per-leaf `fieldValues`-driven Form mode used to cover it too (a flattened
-// field list, one row per schema property), dropped entirely: it fell over
-// on any real-world nested/array/polymorphic body, and Raw mode already
-// covered it anyway (tag chips for mapping, `$rand.` for random values). No
-// migration path was needed to remove it; nothing had shipped to real users
-// yet. Path/query/header params instead get one independently-editable
-// RawBody *per declared name* (FieldValueEditor.tsx) — small enough, and
-// flat enough (OpenAPI never nests a param), that a shared JSON blob per
-// section was more editor chrome than the content warranted; each field
-// alone was still tried first and dropped for the same reason.
-OperationNode {
-  id: string               // unique per canvas instance
-  kind: "operation"
-  operationId: string       // references an Operation.id
-  credentialId: string | null
-  rawParams?: { paths: { [name]: RawBody }, queries: { [name]: RawBody } } | null
-  // rawParams: one field per declared path/query param, in independent paths/queries maps —
-  // never merged into one object, so the same param name declared in both never collides, and
-  // it's always visible which bucket a key belongs to. `null` only when the operation declares
-  // neither; otherwise both keys are always present, each possibly an empty map. At request-build
-  // time (operationNodeHandler.ts's buildRequest), each field resolves independently via
-  // rawBodyResolver.ts's resolveRawScalar: a `paths` entry is substituted into the path template
-  // (silently dropped if "{key}" doesn't actually appear there), a `queries` entry always becomes
-  // a query param.
-  rawHeaders?: { [name]: RawBody } | null   // one field per declared header param, same shape/resolution as rawParams' maps; null when the operation declares none
-  rawBody?: RawBody | null   // the whole body — still one shared Raw JSON section, unlike rawParams/rawHeaders above
-  credentialExtraParamOverrides?: { [paramName]: FieldValue }
-  credentialExtraParamOverridesEnabled?: boolean
-}
-// RawBody { template: string, tags: { [tagId]: BodyTag } } means two different things depending on
-// where it's attached: for rawBody, `template` is a full JSON document's text; for a rawParams/
-// rawHeaders field, it's plain scalar text (no surrounding quotes) — a single value, not a document.
-// A `{{enlace:<tagId>}}` placeholder can sit anywhere in either (whole field, or mixed with literal
-// text) — same syntax, same tag-chip machinery, regardless of which.
-
-// The only remaining use of FieldValue — a credential's per-node
-// extraTokenParams override (CredentialParamOverrideRow.tsx), a small
-// separate picker unrelated to the request sections above.
-FieldValue =
-  | { source: "static", value: any }
-  | { source: "mapped", fromNodeId: string, fromResponseFieldPath: string }   // must be reachable via `connections`
-
-PresetsNode {
-  id: string
-  kind: "presets"
-  credentialId: string | null    // unused — never fires its own request
-  presets: Preset[]        // ordered presets run as one unit — empty, not absent, means none
+interface OperationNode {
+  id: string;
+  kind: "operation";
+  operationId: string;
+  credentialId: string | null;
+  rawParams?: {
+    paths: Record<string, RawBody>;
+    queries: Record<string, RawBody>;
+  } | null;
+  rawHeaders?: Record<string, RawBody> | null;
+  rawBody?: RawBody | null;
+  credentialExtraParamOverrides?: Record<string, FieldValue>;
 }
 
-// One preset inside a "presets" node's `presets` — presets only, never
-// "operation"; never itself a WorkflowNode (no credentialId/graph
-// position, never participates in the main dependency graph
-// individually — only the collection as a whole does; see dependencyGraph.ts's
-// own `checks` loop for how an assert preset's ancestor dependency still
-// attaches to the collection). A real discriminated union — each variant
-// carries only the fields its own kind needs (same pattern `Credential`
-// above uses) — run by its own registry, `engine/nodeHandlers.ts`'s
-// `presetHandlers` (one entry per `PresetKind`, keyed separately from
-// `nodeHandlers`'s one entry per `WorkflowNodeKind` — a preset's `kind`
-// never appears in that other union at all).
-Preset =
-  | { id, kind: "wait", durationMs: number }
-  | { id, kind: "assert", checks: AssertCheck[] }   // every check must pass or the preset (and collection) fails
-
-// One comparison an "assert" preset runs. `source` is the same "reference
-// into a prior step's result" shape a Raw JSON tag chip uses (BodyTag),
-// minus the `id` a dictionary key would need there.
-AssertCheck {
-  id: string
-  source: { type: "response_body" | "response_raw" | "response_header" | "response_status", sourceNodeId: string, jsonPath?: string, headerName?: string }
-  operator: "equals" | "notEquals" | "contains" | "exists" | "notExists" | "greaterThan" | "lessThan"
-  expected?: string          // plain user-typed text; irrelevant for exists/notExists
+/** Preset collections (Wait timers, Assertions) */
+interface PresetsNode {
+  id: string;
+  kind: "presets";
+  credentialId: null;
+  presets: Preset[];
 }
 
-WorkflowConnection {
-  fromNodeId: string
-  toNodeId: string
+type Preset =
+  | { id: string; kind: "wait"; durationMs: number }
+  | { id: string; kind: "assert"; checks: AssertCheck[] };
+
+interface AssertCheck {
+  id: string;
+  source: {
+    type: "response_body" | "response_raw" | "response_header" | "response_status";
+    sourceNodeId: string;
+    jsonPath?: string;
+    headerName?: string;
+  };
+  operator: "equals" | "notEquals" | "contains" | "exists" | "notExists" | "greaterThan" | "lessThan";
+  expected?: string;
 }
 
-// Canvas layout chrome — not part of executed Workflow; round-tripped in .enlace.
-NodeGroup {
-  id, name, nodeIds: string[]
-  collapsed: boolean
-  position: { x, y }
-  skipConfirmOnDrop: boolean
+/** Execution ordering edge */
+interface WorkflowConnection {
+  fromNodeId: string;
+  toNodeId: string;
 }
 
-Workflow {
-  nodes: WorkflowNode[]
-  connections: WorkflowConnection[]
+/** Visual layout grouping (canvas only, not part of execution) */
+interface NodeGroup {
+  id: string;
+  name: string;
+  nodeIds: string[];
+  collapsed: boolean;
+  position: { x: number; y: number };
 }
 
-// Versioned JSON stored in a `.enlace` file. V1 exports one workflow but
-// uses an array so collections can hold multiple workflows later. Credentials
-// are collection-level so workflow node references keep resolving. Future
-// environments belong beside workflows/credentials, not inside Workflow.
-EnlaceCollection {
-  format: "enlace-collection"
-  version: 1
-  name: string
-  exportedAt: string
-  secrets: "stripped" | "included"
-  credentials: CredentialStub[] | Credential[]
-  workflows: [{
-    id, name
-    specHint: { title?, version?, operationIds }
-    nodes, connections, nodePositions, groups
-  }]
-}
-
-// A discriminated union on `type` — each variant carries only the fields
-// that type needs. Held in browser memory unless the user explicitly chooses
-// a warned, full-credential `.enlace` export; stripped export remains default.
-// `fromSecurityScheme?` on every variant records the spec's own
-// `components.securitySchemes` key when the credential was configured
-// from what the spec declares (see engine/securitySchemes.ts) — purely
-// informational, shown as a tag on the credential's card.
-Credential =
-  | { id, name, fromSecurityScheme?, type: "bearer", token }
-  | { id, name, fromSecurityScheme?, type: "basic", username, password }
-  | { id, name, fromSecurityScheme?, type: "apiKey", paramName, in: "header" | "query", key }
-  | { id, name, fromSecurityScheme?, type: "oauth2_clientCredentials", tokenUrl, clientId, clientSecret, scope?, extraTokenParams?, clientAuthMethod }
-  | { id, name, fromSecurityScheme?, type: "oauth2_password", tokenUrl, username, password, clientId?, clientSecret?, scope?, extraTokenParams?, clientAuthMethod }
-  | { id, name, fromSecurityScheme?, type: "cookie", loginUrl? }
-  // more variants planned (full OAuth2 authorizationCode-grant support)
-
-RunResult {
-  steps: [
-    {
-      nodeId: string
-      request: { method, url, headers, body }
-      response?: { status, headers, body }
-      timestampStart: string
-      timestampEnd: string
-      error?: string
-      subSteps?: RunStep[]   // "presets" nodes only — one settled RunStep per internal preset, in order
-    }
-  ]
+/** Top-level workflow definition */
+interface Workflow {
+  nodes: WorkflowNode[];
+  connections: WorkflowConnection[];
 }
 ```
 
-**Connection and mapping are two separate concerns.** A `WorkflowConnection` establishes execution *order* only — it carries no data. A Raw JSON section's own tag-chip mapping establishes a field's *data source*, but — unlike the old per-leaf `FieldValue` mapping this replaced — deliberately implies no ordering edge of its own: a tag can only ever pick a source already offered as an ancestor by the *existing* dependency graph (see `computeAncestors`, which powers the "map from…" candidate list every mapping picker in the UI uses), so its source is always already an explicit-connection ancestor by construction. `credentialExtraParamOverrides` and an assert preset's `checks` are the two mechanisms that still do imply an edge with no explicit connection drawn (see `dependencyGraph.ts`'s `buildDependencyGraph`) — a credential-param mapping and an assert check both reference a captured response the same "any ancestor" way, but neither one is gated behind first drawing a connection the way a Raw tag chip is.
+---
 
-A field may be mapped from **any ancestor** in the connection graph, not just the node directly before it — e.g. `A -> B -> C` where `B` carries no data at all, `C` can still map a field from `A` directly, skipping `B`.
+## 5. Execution Semantics & Concurrency
 
-**Preset nodes.** Not every canvas node fires an HTTP call — `WorkflowNode`'s own `kind` discriminant (`OperationNode | PresetsNode`) says what a node actually does when it runs, dispatched by a small handler registry (`packages/core/src/engine/handlers/index.ts`'s `nodeHandlers`) that `executeChain` calls through without knowing any kind's specifics: `checkReady` (can this node run at all — e.g. an `OperationNode`'s `operationId` must resolve against the loaded spec), `execute` (run it for real, return a settled `RunStep`), `preview` (resolve its about-to-fire request for a breakpoint pause, or `null` if the kind has none). Each concrete handler narrows the `WorkflowNode` it's handed back down to its own variant via a small "narrow-or-throw" helper (`asOperationNode`/`asPresetsNode`, in `engine/handlers/guards.ts`) rather than the registry's shared `NodeHandler` interface itself being widened per-kind. `kind` is required on both variants (`"operation"`/`"presets"`) — every node the store creates and every import writes it explicitly, no default-when-absent case. `"presets"` is the only other `WorkflowNodeKind` — a `Preset`'s own `kind` (`"wait"`/`"assert"`, see `Preset`'s own union just above) is a separate, smaller `PresetKind` union dispatched by a parallel registry, `presetHandlers` (one entry per `PresetKind`, same `checkReady`/`execute` shape minus `preview` — no preset ever fires ahead of time for a breakpoint the way an operation's request does), called by `presetsNodeHandler`'s own loop, never by `executeChain` directly. **Wait** is the simplest `PresetKind`: a pure pacing step (`durationMs`, no credential, no request) that sleeps once its turn in the collection's loop comes up, then settles with a synthetic `RunStep` (`request.method: "WAIT"`, no `response`) attached under its collection's `subSteps`, just with no response body a later node could map a field from. A run's Stop aborts an in-progress Wait's sleep immediately rather than letting it run out its full duration pointlessly — the one preset kind where "everything already in flight still runs to completion" (see §5) has something worth cutting short. Breakpoints only ever arm on a connection into/out of the collection as a whole — a preset is never its own breakpoint target, only its parent collection is. A canvas-layout `NodeGroup` (below) is a different concept from a preset — groups are drop-overlap layout chrome, never a `kind` of their own.
+### 5.1 Graph Compilation & Cycle Detection
+1. When **Run** is triggered, the engine builds a directed dependency graph.
+2. The graph incorporates both explicit `WorkflowConnection` edges and implicit dependency edges:
+   - Any `credentialExtraParamOverrides` referencing an upstream step.
+   - Any `AssertCheck` referencing a prior step's response.
+3. The graph is evaluated using **Kahn's algorithm** to verify it is acyclic and compute top-level execution tiers. If a cycle exists, execution aborts before any HTTP request fires with a `CyclicWorkflowError`.
 
-**The presets collection is the only way a preset reaches the canvas.** The palette (`OperationList.tsx`) never offers a "collection" item to drag — only real presets (Wait, Assert) — but dropping any one of them always creates (or, on a drop-onto-an-existing-collection, appends to) a `kind: "presets"` node holding an ordered `Preset[]`, never a standalone graph node of its own. Even a single dropped preset renders with the collection's own chrome (below), never `WorkflowNodeCard`'s. `Preset` is a discriminated union (`WaitPreset | AssertPreset`, each carrying only its own kind's fields — `WorkflowNode` itself is the separate `OperationNode | PresetsNode` union described just above; a preset's `kind` is a smaller `PresetKind` union that never appears there) run by its own registry, `engine/nodeHandlers.ts`'s `presetHandlers` (one entry per `PresetKind`, parallel to `nodeHandlers`'s one entry per `WorkflowNodeKind`) — `presetsNodeHandler` dispatches each preset to `presetHandlers[preset.kind]` directly, no synthetic top-level node ever built. Presets run strictly in order, never concurrently, stopping at the first failure or the instant a Stop's abort signal fires (same "no partial recovery" rule `executeChain` itself follows). A collection is one node in the dependency graph and one row in Results: it settles as a single aggregate `RunStep` (`request.method: "PRESETS"`, no `response`) with every preset's own settled `RunStep` attached under `subSteps`, in order — "one executable unit with per-preset Results detail," not one graph node per preset. `Preset`s never participate in `WorkflowConnection`/the dependency graph individually, are reordered by swapping with an adjacent neighbor only (never an arbitrary jump), and are reordered/removed/selected on the collection's own expanded canvas card (`PresetsNodeCard.tsx`) — collapsed, it renders as a small diamond with a chevron, preset count, and short summary (e.g. `Wait 2s · Wait 500ms`); expanded, a box listing each preset in order (uniform icon + `formatPresetLabel` summary row regardless of kind) with plain "vertical order line" chrome, not real connectors/Handles between rows. A preset's actual *configuration* — Wait's duration, Assert's checks — is edited in the `NodeConfig` inspector instead, not inline on the card; see §6's own paragraph on this split. Outside the collection it's a normal graph node — real target/source `Handle`s, connections, and breakpoints all work exactly as they do for any other node.
+### 5.2 Readiness-Driven Concurrency
+Execution is **per-node and readiness-driven**, not locked into rigid sequential waves:
+- A node fires the instant **all** of its direct upstream dependencies have successfully resolved to `'completed'`.
+- Sibling branches run concurrently. If branch `A -> B` takes 2000ms and branch `A -> C` takes 100ms, node `C` completes immediately without waiting for `B`.
+- Downstream nodes depending only on `C` fire immediately upon `C`'s completion.
 
-**Assert**, the second preset kind, runs an ordered list of `checks` (`AssertCheck`) against an already-captured response — each check's `source` is the same "reference into a prior step's result" shape a Raw JSON tag chip uses (`BodyTag`: body field/raw body/header, plus a fourth `response_status` kind added alongside Assert), resolved via `bodyTags.ts`'s `resolveTagValue` and compared via `engine/assertCompare.ts`'s `evaluateCheck` (`equals`/`notEquals`/`contains`/`exists`/`notExists`/`greaterThan`/`lessThan`, numeric-aware where it matters). Checks run in order and stop at the first failure — same "no partial recovery" rule every other preset/step loop in this codebase follows. A failing check fails the assert preset, which fails the collection's own aggregate `RunStep` exactly the way a failed sub-step already does for Wait, which in turn skips every downstream node — the same propagation an HTTP failure already has, no special-casing added for Assert. Since a check's `source.sourceNodeId` lives inside the preset rather than on the collection node itself, `dependencyGraph.ts`'s `buildDependencyGraph` has a second implied-edge loop (alongside `credentialExtraParamOverrides`) that walks every preset's `checks` and attaches the dependency to the *collection's* id — a preset still never participates in the graph individually, only its parent collection does.
+### 5.3 Interactive Debugging & Breakpoints
+- **Breakpoints**: Armed by double-clicking a connection edge. Armed connections display a distinct red marker.
+- **Pre-Flight Preview**: When a node's dependencies are satisfied but it is held by an armed breakpoint, the engine compiles the complete outgoing HTTP request (substituting all headers, parameters, and tag values) and emits a preview payload without sending the request.
+- **Run Controls**:
+  - `Continue`: Resumes all currently paused nodes until the next breakpoint.
+  - `Step`: Resumes a single designated paused node.
+  - `Stop`: Immediately aborts waiting nodes, halts admission of newly ready nodes, and marks unreached nodes as `'skipped'`.
 
-## 5. Request Flow
+### 5.4 Error Handling & "Debug Failed"
+- If a node returns an HTTP error (4xx/5xx) or encounters a network failure:
+  - Downstream dependent nodes are marked as `'skipped'`.
+  - Independent siblings already in flight are allowed to settle.
+- **Rerun Failed / Debug Failed**:
+  - The engine can seed execution with the completed results of a prior run (`resumeFrom: RunResult`).
+  - Already-successful upstream nodes are preserved in cache.
+  - Execution restarts specifically at the failed node, with or without breakpoints armed.
 
-1. User hits **Run** in the browser.
-2. The dependency graph is the union of explicit `connections` and two implied-edge cases — a mapped `credentialExtraParamOverrides` entry and an assert preset's check, each of which imply their source must run first whether or not a connection was also drawn (see `dependencyGraph.ts`'s `buildDependencyGraph`). A Raw JSON section's own tag-chip mapping implies no edge of its own — its source is always already a connection-derived ancestor by construction (see §4's own note on this). `computeExecutionLevels` (Kahn's algorithm) still runs once up front purely as a `CyclicWorkflowError` check before anything fires.
-3. Execution itself is **per-node, readiness-driven**, not batched by level: each node fires the instant every node it depends on has *completed*, independent of whatever else is or isn't still in flight elsewhere in the graph. Independent nodes with no pending dependencies still become ready and fire together in the same pass — exactly what a level would produce whenever nothing is gating anything — but a node is never held back waiting on an unrelated sibling that merely happens to share an ancestor (e.g. `A -> B` and `A -> C` in the same wave: a slow `B` never delays `C`, or anything depending only on `C`). This generalization is what lets a breakpoint on one connection gate exactly the node(s) downstream of it without incorrectly gating unrelated concurrent branches (see below) — see `packages/core/src/engine/chainExecutor.ts`'s `executeChain`.
-4. A node whose dependencies are all satisfied but sits behind a **breakpoint** — armed on a `WorkflowConnection` via the red marker on its connector (Canvas.tsx's `BreakpointConnectionEdge`; never on a mapping edge) — pauses instead of firing, and its fully-resolved request (the same resolution a real fire would do) is built and reported as a preview without being sent. A paused run stays "in progress": `executeChain`'s returned promise doesn't settle until every paused/in-flight node does. Three controls drive it from there (`RunControl`, captured by `store/workflowStore.ts`'s `run()` as `activeControl`, exposed as one global set of buttons in `App.tsx`'s header — not per node/row — since Continue/Stop act on the whole run regardless and Step just needs one target, resolved from the selected node if it's paused or else the first paused node): **Continue** releases every node paused right now (a later breakpoint further down the graph still pauses); **Step** releases one specific paused node; **Stop** admits nothing further and settles every still-pending/paused node to `'skipped'`, though anything already in flight still runs to completion.
-5. For each node's request, once it's ready to fire (i.e. not paused):
-   - Resolve `rawBody` as JSON text (literal text as-is, a tag chip's mapped value pulled from the actual captured response of its referenced upstream node, a `$rand.method(args)` call resolved fresh via `engine/randomExpr.ts`) via `engine/rawBodyResolver.ts`'s `resolveRawBody`. Resolve each `rawParams`/`rawHeaders` field independently via that same file's `resolveRawScalar` (same tag-chip/`$rand.` substitution, no JSON parsing since a field is a plain scalar) — a `rawParams.paths` entry substitutes into the path template, a `rawParams.queries` entry always becomes a query param, a `rawHeaders` entry always becomes a header (see their own comments in §4).
-   - Attach credential, if any — resolved per its type (`engine/credentials.ts`) into a header (bearer/basic/apiKey-in-header/either oauth2 grant), a query param (apiKey-in-query), or — uniquely for `cookie` — a `credentials: 'include'` fetch option instead of any injected value at all, since `Cookie` is a forbidden fetch() request header and can only ever be attached by the browser's own cookie jar. The oauth2 types (`clientCredentials`, `password`) fetch (and in-memory-cache) a token from the credential's `tokenUrl` first — form body includes optional `scope` plus any `extraTokenParams` (arbitrary additional claims; reserved keys like `grant_type`/`scope`/`client_id` cannot be overridden that way); `cookie` relies on the user having already logged into the target themselves, in any tab of the same browser, entirely outside Enlace's involvement (see §7).
-   - Execute the real HTTP request **directly from the browser** to the target API.
-   - Capture request + response, and emit a status-change event the store consumes to update the debug pane live (see point 7) — redacting credential values in the displayed log.
-6. If any node fails — or the user issues Stop — halt admission of any newly-ready node — no partial recovery — but everything already in flight at that point still runs to completion, since those requests can't be un-sent; either way, every node still `'pending'`/`'paused'` at that moment settles to `'skipped'` immediately, rather than sitting in limbo for the rest of the run.
-7. The bottom pane has two tabs (`DebugPane.tsx`): **Run Output** renders each step as its request/response actually settles, not only once the whole run finishes, unaffected by whether any breakpoint is armed; **Debugger** pre-populates a row for every node before Run even starts (in dependency order, for display only), overlaid with live status (pending/in-flight/paused/completed/failed/skipped) and an aggregate breakdown ("2 completed · 1 paused · 1 pending") rather than one global run status — a run can be simultaneously executing one branch and gated on another. Both consume the same `store/workflowStore.ts`'s `run()`, which streams `executeChain`'s per-node events into `runResult`/`stepStatusByNodeId`/`previewRequestByNodeId` incrementally. The Debugger tab auto-switches into view the instant execution actually reaches an armed breakpoint.
-8. **Run** and **Debug** are two separate buttons, not one whose behavior silently depends on whatever's armed — `run()` only honors `armedBreakpoints` (and only sets `activeControl` at all) when called as `run({ useBreakpoints: true })`; a plain "Run" ignores every armed breakpoint outright, so having debug points set up never forces a stop-and-inspect run.
+---
 
-Verified with a concurrency-counter unit test (not just an order assertion) proving independent branches genuinely overlap in flight, a fan-out test proving a node fires as soon as its own dependency settles regardless of an unrelated slower sibling, and dedicated coverage for pause/continue/step/stop (including that Stop's admission-halt applies globally, not just to nodes downstream of whatever triggered it) — see `packages/core/src/engine/chainExecutor.test.ts`.
+## 6. Persistence & Storage Architecture
 
-## 6. Frontend Structure
+1. **Client-Side IndexedDB**:
+   - Enlace persists canvas layouts, nodes, connections, node groups, and last-run execution outputs using the browser's IndexedDB API.
+   - Storage is namespaced by the adapter's mount path (e.g. `enlace_db_/enlace`), ensuring multiple instances on the same host do not collide.
+   - Zero database setup is required on the host server.
+2. **Export / Import Format (`.enlace`)**:
+   - Workflows export to structured, versioned JSON (`enlace-collection` v1).
+   - **Partial Export (Default)**: Exports canvas structure, node configs, and credential names/types with all secrets stripped.
+   - **Full Encrypted Export**: Uses the Web Crypto API (`crypto.subtle`) to derive an AES-256-GCM key using PBKDF2 (600,000 iterations, SHA-256) from a user-provided passphrase. The resulting payload is cryptographically sealed.
 
-- **Canvas**: renders the `Operation` list as draggable boxes; dragging one onto the canvas adds a `WorkflowNode`. Dragging box-to-box (via each node's connect handles) creates a `WorkflowConnection` — order only, no data — rendered as a solid arrow (`BreakpointConnectionEdge.tsx`). **Double-clicking a connector arms a breakpoint** on it (wired at the canvas level via React Flow's `onEdgeDoubleClick`, not on any always-visible per-edge affordance) — an armed connector shows a red dot at its midpoint that stays clickable as a redundant disarm target, and a second double-click on the connector also disarms. Field mappings render as a separate dashed, animated edge, derived by scanning every node's raw sections for a tag chip's `sourceNodeId` (`buildFlowGraph.ts`'s `mappedSourceNodeIds`), not drawn directly on the canvas (direct field-to-field drag-connect isn't supported yet); double-clicking one is silently ignored — a breakpoint can never arm on a mapping edge. A node's card carries a small top-left status badge and border treatment for its live run status — pulsing blue while in-flight, solid amber (plus an inline "Paused here" label) once paused at a breakpoint, a green check/red cross once settled. Cards keep a fixed clearance via `findOpenPosition` on drop / drag-end — except when drop-overlap (≥ ~50% of the smaller card) hits another node or an existing group: that gesture opens a confirm (`GroupConfirmModal`) to create/join a named canvas group (optional “Don’t ask when dropping into this group”), and Cancel falls back to the usual snap. Groups (`NodeGroup`) are canvas state beside `nodePositions`, never part of the executed `Workflow`, and round-tripped in `.enlace` exports. Expanded = titled frame around members; collapsed = mini cluster listing each member’s method + path (style B) with external edges rewired to the group shell — member cards are hidden while collapsed, so per-member run status (and an aggregate badge/border on the group chrome) is shown on the mini cluster instead. Double-click the collapsed card (or the chevron) to expand. Dragging a member so the expanded frame grows around an ungrouped card offers the same join confirm (Cancel nudges that card clear of the frame). A member can leave via the card’s leave-group control or a row control on the collapsed mini cluster (node stays on the canvas; group dissolves if fewer than 2 members remain). Multi-select → Group is still out of scope.
-- **Presets palette + presets-collection chrome**: a "Presets" section above Operations (`OperationList.tsx`) is an icon-grid "library" (bare colored icons, no card chrome, name as a hover tooltip/`aria-label` — not a row-per-item list like Operations) offering only real presets — Wait and Assert — dragged onto the canvas via a distinct `text/preset-kind` drag payload (keeps this drop path from colliding with an operation drop). There's no separate "collection" palette item: dropping one on empty canvas routes through `Canvas.tsx`'s `onDrop` into `addPresetsNode(position, initialPreset)`, which creates a `kind: "presets"` node seeded with that one preset, never a standalone `kind: "wait"`/`"assert"` node; dropping one *onto an existing presets card* instead appends to it directly (`PresetsNodeCard.tsx`'s own `onDrop`, wired on that card only — not `WorkflowNodeCard` — which also stops the event from propagating to `Canvas.tsx`'s handler and creating a second, stray collection at the same spot). `PresetsNodeCard.tsx` is its own React Flow node type (`presetsNode`), not a reuse of `WorkflowNodeCard`/`GroupNodeCard`: collapsed is a small diamond (chevron + preset count + summary); expanded is a box listing each preset in order, up/down move buttons (adjacent-swap reorder only), and a remove button per preset — dragging another preset onto the card (collapsed or expanded) is the *only* way to append one; there's no "+ Add" button, since that stops scaling once more than a couple of preset kinds exist. Every row is the same shape regardless of kind — an icon + `formatPresetLabel(preset)` text (e.g. "Wait 2s", "Assert (2 checks)") in a clickable summary button, so the card stays a fixed width no matter what it holds — clicking a row calls `selectPreset(presetsNodeId, presetId)`, which is the *only* thing that opens that preset's real editor. That editor lives in `NodeConfig.tsx`, not on the card: `NodeConfig`'s own `kind === 'presets'` branch looks up `node.presets.find(p => p.id === selectedPresetId)` — nothing selected renders a "Select a preset on the canvas to configure it." placeholder (same tier as its "Select a node to configure it." placeholder for no node selected at all); a resolved preset renders a small header (icon + `formatPresetLabel`) plus a kind-specific editor — Wait gets a duration-in-seconds field (`setPresetDurationMs`); Assert gets a nested list of check rows — ancestor-node picker, source-type picker (body field/raw body/header/status), an operator picker, and an expected-value input, each backed by `addAssertCheck`/`removeAssertCheck`/`updateAssertCheck` — reusing `NodeConfig.tsx`'s own already-computed "Map from…" ancestors (`computeAncestors`/`flattenResponseFields`), minus its target-field type-compatibility filtering. `selectedPresetId` (store state, alongside `selectedNodeId`) is what `selectPreset` sets; `selectNode` always resets it to `null`, and `addPresetsNode`/`addPreset` auto-select the preset they just created/appended, so a palette drop's config is already open in the inspector without an extra click. Collapsed/expanded state itself (`presetsCollapsed`, keyed by node id) is canvas-only view chrome — same tier as `nodePositions`, round-tripped in `.enlace` exports, never part of the executed `Workflow`.
-- **Locked while a run is in progress** (`workflowStore.ts`'s `isLocked`): every node-config/data-mapping/graph-structure mutation — raw path·query·headers·body, credential assignment, add/remove node, connect/disconnect, arm/disarm breakpoint, create/join/ungroup — no-ops at the store level, not just in whichever UI control also happens to be disabled to match. `executeChain` reads `nodes`/`connections`/`credentials`/`armedBreakpoints` exactly once, at the moment `run()` calls it; before this guard existed, an edit made while a run (or a paused debug session, which can sit open indefinitely) was in progress looked like it "took" in the store — the Inspector showed the new value — but silently had no effect on that run's actual behavior at all. Node position (and moving a whole group) is the deliberate exception: canvas-only, never part of the executed `Workflow`, so dragging a node stays allowed throughout a run.
-- **Node inspector**: per selected node — a lock icon before the operation verb opens an inline credential picker (grey when unset, light green when attached), and a **Request** section grouped into Path params / Query params / Headers / Body — no Form mode, no toggle. Body is one CodeMirror-based Raw JSON editor (`RawBodyEditor.tsx`); a section renders at all only when the node's own `rawBody` is non-null, seeded from the operation's schema the moment the node is created (`graphSlice.ts`'s `addNode`, via `utils/rawDefaults.ts`). Path/query/header params instead render one `FieldValueEditor.tsx` row per declared name (from `rawParams.paths`/`rawParams.queries`/`rawHeaders`, same non-null-seeds-the-section rule; `paths`/`queries` are separate sections again now that each param is a single inline label+input row rather than a shared JSON blob — the visual-bulk problem that motivated merging them doesn't apply once there's nothing left to merge) — label and its slim single-line CodeMirror doc sit inline on one row (no gutters/folding/JSON language, since a field is a scalar, not a document). Typing `{{` opens the same `TagConfigModal.tsx` Body's editor uses (source + JSONPath filter, with response-field autocomplete via `flattenSchema.ts`'s `flattenResponseFields`) and inserts a mapped tag chip — the chip itself, rendered inline via the shared decoration plugin, is what shows a field is mapped; there's no separate mode/toggle for it. (An earlier version of this editor added a two-select "Mapped" tab alongside a "Static" one, both writing the same underlying value — dropped once tried in practice: the chip already was the "this is mapped" signal, so a second UI producing exactly what typing `{{` already does was redundant.) The Body editor additionally offers `$rand.<method>()` completion, which path/query/header fields don't. Both editor kinds share their tag-chip rendering/click-to-edit/copy-paste-dedup plumbing via `tagChipDecorations.ts`. Locked (a native `<fieldset disabled>` around everything but the collapse button, plus a banner) while a run is in progress, whether debugging or not; each editor gets the equivalent treatment via its own `readOnly` prop, since a `<fieldset disabled>` wrapper alone doesn't reach it.
-- **Run / Debug buttons**: two distinct actions (see point 8 above), each disabled while a run is in progress. Once a run is actually controllable (`activeControl` set — only ever true for a Debug run), both disappear entirely, replaced by icon-only **Continue/Step/Stop** buttons (hover title as the accessible name, no visible label) — never shown alongside Run/Debug, so it's never ambiguous whether a plain run or a debug session is in progress.
-- **Bottom pane**: a unified **Results** surface (`DebugPane.tsx` + `ResultsList.tsx`) — rows only while Results chrome is live (per-node status / pause preview), with expandable request/response (`debugPaneShared.tsx`), pause bar Continue/Step, and Clear (empties the list but **keeps `runResult`** so inspector tag-mapping preview still resolves). Idle or after Clear shows a short empty hint — canvas nodes alone do not pre-populate pending rows. During a **Debug** session (`debugConsoleOpen` / `isDebugRun`), the pane splits horizontally into **Results** on the left and a classic **Console** REPL on the right (`DebugConsole.tsx`); when the session ends, Results expands in place. Console `$` is the workflow run so far, printed **one level at a time** (`nodes`, `credentials`, `focus`; then `$.nodes`, `$.nodes.<label>`, …). Naming: **nodes** (not steps); request `params` / `query` / `headers` / `payload`; response `status` / `headers` / `body` / `error`. Macros: `help`, `clear`/`cls` (screen only; ↑/↓ recall kept). Input is CodeMirror with path/macro autocomplete. Secrets redacted. Session-only.
-- Both side panels (node inspector, bottom pane) and the operations sidebar are independently collapsible, so the canvas can reclaim their space.
-- Nodes are drag-repositionable and individually removable, with connections/mappings referencing a removed node cleaned up automatically rather than left dangling.
+---
 
-Built with React, React Flow, and Zustand.
+## 7. Security & Trust Model
 
-## 7. Security Notes
-
-- Credentials are held in browser memory by default and never written to logs. A normal `.enlace` export ("Partial") includes credential configuration but strips authenticating values — this mode is never encrypted, since there's nothing usable in it to protect. The export dialog's "Full credentials" mode includes every authenticating value, and going forward is *mandatorily* encrypted: the user sets a password at export time (min 8 characters, typed twice), and the same password is required at import time to read the file back. Full secrets are never written to `localStorage` or adapter persistence, and the password itself is held in browser memory only for the duration of the `crypto.subtle` call that needs it — never stored anywhere, with no recovery path if it's lost.
-- **Encrypted-export envelope** (`utils/collectionCrypto.ts`): a "Full credentials" export wraps the same plaintext `EnlaceCollection` JSON unchanged inside `{ format: "enlace-collection-encrypted", version: 1, kdf: { name: "PBKDF2", hash: "SHA-256", iterations, salt }, cipher: { name: "AES-GCM", iv }, ciphertext }`, using only `crypto.subtle` (Web Crypto) — no new dependency. PBKDF2-SHA256 at 600,000 iterations (OWASP's 2023 minimum) derives an AES-256-GCM key from the password; salt and IV are freshly random on every export, so encrypting the same collection with the same password twice never produces the same bytes. `crypto.subtle` is only defined by browsers in a secure context (HTTPS or localhost) — since some of Enlace's real target deployments are plain HTTP pre-prod servers, `isEncryptionSupported()` guards both encrypt and import-side decrypt with a clear error instead of a raw `TypeError`, and the export dialog disables the "Full credentials" option outright when unsupported. What this guarantees: **the file is unreadable without the password** — not "unreadable outside Enlace," which isn't a real property to claim for an MIT-licensed, public-repo tool built on standard, publicly-documented crypto; anyone with the file and the password can decrypt it with five lines of `crypto.subtle` calls and no Enlace code at all, by design. AES-GCM's authentication tag means a wrong password or a tampered/corrupted file both fail the same way (`DecryptionError`) rather than silently returning garbage. A *legacy* plaintext "with secrets" file — produced by a build of this repo from before this envelope existed — remains importable, surfaced with a loud one-time warning that it was never encrypted, rather than being rejected outright.
-- The debug pane redacts the `Authorization` header value, and (for an apiKey credential sent `in: "query"`, where the secret lives in the URL itself rather than a header) the named query param in the displayed URL — shows that a credential was sent without exposing the raw value.
-- CORS is the target API's responsibility, since requests fire directly from the browser — this tool doesn't solve it, and that must be documented clearly wherever it matters.
-- No per-user auth inside the tool; access control is inherited entirely from whatever network perimeter (VPN, internal network, SSO-gated proxy) already protects the host environment.
-- `cookie` never involves any secret Enlace holds. The user logs into the target in their own browser — any tab, any time, using whatever login flow the target itself requires (third-party IdP, SSO, MFA, its own form) — entirely independent of Enlace, which has no part in that login and never sees the resulting cookie's value. When a node uses a `cookie` credential, `chainExecutor.ts` sets `credentials: 'include'` on the actual request so the browser's own cookie jar attaches whatever that independent login already set; this depends entirely on the target's CORS policy allowing credentialed cross-origin requests, same as any other CORS concern above. The credential's optional `loginUrl` is just a convenience link (opened in a new tab, on request) to jump to the target's login page — never something Enlace opens or drives itself. Deliberately scoped to *only* this case — a "the login flow hands back a token instead, paste it in" variant was designed and built, then dropped: the token could only be obtained by clicking a login-triggering button on the same form as the now-required Token field, which nothing communicated, leaving a required field the user had no way to fill in on their first attempt. Revisit only on real demand, with that ordering problem actually solved. Automatic capture of a token embedded in a redirect URL remains a separate, later concern (full OAuth2 `authorizationCode`-grant support, needing Enlace to own a registered callback route).
-
-## 8. Deployment / Distribution
-
-- One shared UI bundle plus one or more thin adapter packages, each published via its own ecosystem's normal channel.
-- No Docker, no separate service, no required database — runs in the same process as the existing API, travels with it through its normal deployment pipeline.
-- Access control is whatever already protects that environment; the tool adds none of its own.
-
-## 9. Open Technical Decisions
-
-- Confidence-scoring approach for auto-suggested field mapping, once built (how to rank multiple candidate fields sharing type/name) — not yet decided.
-- Strategy for handling a workflow that references a spec which has since changed shape (fail loudly vs. attempt best-effort remap) — not yet decided.
-- Keeping multiple adapters' behavior identical, once more than one exists, will need a shared conformance test suite — not built yet.
+1. **In-Memory Secrets**:
+   - Bearer tokens, Basic passwords, and API keys are stored in browser runtime memory only.
+   - Secrets are automatically redacted from the UI debug pane, execution logs, and IndexedDB snapshots.
+2. **CORS Policy**:
+   - Because HTTP calls originate directly from the client browser, cross-origin targets must allow browser requests via appropriate `Access-Control-Allow-Origin` and `Access-Control-Allow-Headers` configurations.
+3. **Session Cookies**:
+   - When configured with `cookie` auth, Enlace relies on native browser cookie handling via `credentials: 'include'`. Enlace never reads, stores, or transmits session cookies manually.
