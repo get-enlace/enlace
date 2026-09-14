@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWorkflowStore } from './store/workflowStore.js';
 import { hasResumableFailure } from './store/slices/runSlice.js';
-import { restoreAutosave, startAutosave } from './persistence/autosaveSync.js';
+import { restoreAutosave, restoreRunResult, startAutosave, startRunResultAutosave } from './persistence/autosaveSync.js';
 import {
   Canvas,
   ChromeSettingsMenu,
@@ -58,16 +58,21 @@ export default function App() {
     let cancelled = false;
     // Wait for the spec before restoring — restoreAutosave's own
     // unknown-operation-id check needs `operations` populated to be
-    // meaningful (see its own comment). startAutosave is independent of
-    // that and subscribes right away, so nothing typed during the brief
-    // load window goes unsaved.
-    void loadOperations().then(() => {
-      if (!cancelled) void restoreAutosave();
+    // meaningful (see its own comment). restoreRunResult runs after that
+    // (replaceWorkflow, inside restoreAutosave, resets runResult — see its
+    // own comment). Both start* subscriptions begin right away, so nothing
+    // typed/run during the brief load window goes unsaved.
+    void loadOperations().then(async () => {
+      if (cancelled) return;
+      await restoreAutosave();
+      if (!cancelled) await restoreRunResult();
     });
     const stopAutosave = startAutosave();
+    const stopRunResultAutosave = startRunResultAutosave();
     return () => {
       cancelled = true;
       stopAutosave();
+      stopRunResultAutosave();
     };
   }, [loadOperations]);
 

@@ -86,6 +86,20 @@ describe('buildFromLastRunSeed', () => {
     expect(seed?.steps.map((s) => s.nodeId).sort()).toEqual(['c', 'd']);
   });
 
+  it('treats a node as unedited when its content matches, even with a different object reference (e.g. restored from IndexedDB)', () => {
+    // Simulates persistence/'s restoreRunResult: `nodes` and
+    // `lastRunNodesById` come back from two independent deserializations,
+    // so they can never be reference-equal even for a node nobody touched.
+    const a = node('a');
+    const restoredA: WorkflowNode = JSON.parse(JSON.stringify(a));
+    const lastRunNodesById = new Map<string, WorkflowNode>([[a.id, restoredA]]);
+    const previousRunResult = { steps: [step('a')] };
+
+    const seed = buildFromLastRunSeed([a], [], previousRunResult, lastRunNodesById);
+
+    expect(seed?.steps.map((s) => s.nodeId)).toEqual(['a']);
+  });
+
   it('does not choke on a completed node removed from the workflow since the last run', () => {
     const a = node('a');
     const lastRunNodesById = new Map<string, WorkflowNode>([

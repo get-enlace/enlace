@@ -320,6 +320,27 @@ describe('executeChain', () => {
     expect(url).toBe('http://example.test/noop?apiKey=secret-key');
   });
 
+  it('flags an apiKey-in-header credential\'s own header name in redactHeaderNames, not just "Authorization"', async () => {
+    const noop: Operation = {
+      id: 'GET /noop',
+      method: 'get',
+      path: '/noop',
+      parameters: [],
+      requestBodySchema: null,
+      requestBodyContentType: null,
+      responseSchema: null,
+    };
+    const a: WorkflowNode = { id: 'a', kind: 'operation', operationId: 'GET /noop', credentialId: 'cred-1' };
+    const credentialsById = new Map<string, Credential>([
+      ['cred-1', { id: 'cred-1', name: 'Test', type: 'apiKey', paramName: 'X-Api-Key', in: 'header', key: 'secret-key' }],
+    ]);
+
+    const request = await buildRequest(a, noop, new Map(), credentialsById, 'http://example.test');
+
+    expect(request.headers['X-Api-Key']).toBe('secret-key');
+    expect(request.redactHeaderNames).toEqual(['X-Api-Key']);
+  });
+
   it('sets credentials: "include" on the actual fetch() call for a cookie credential, with no headers/query injected', async () => {
     const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {}));
     vi.stubGlobal('fetch', fetchMock);

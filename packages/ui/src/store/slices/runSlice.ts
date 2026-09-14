@@ -12,6 +12,29 @@ import type {
 import { isLocked, type WorkflowState } from '../types.js';
 
 /**
+ * Whether two nodes have the same effective config — used by
+ * `buildFromLastRunSeed` below as its staleness check. Content comparison
+ * (`JSON.stringify`), not reference equality: `lastRunNodesById` can now
+ * come back from `persistence/`'s IndexedDB restore (see
+ * `restoreRunResult`) as freshly-deserialized objects that will never be
+ * reference-equal to anything, even an untouched node, so a reference
+ * check would treat every restored node as stale and defeat "Rerun failed"
+ * surviving a refresh entirely. `WorkflowNode` is plain JSON-safe data (no
+ * functions, no `File` — those live separately in `uploadedFiles`, see
+ * types.ts's `uploadedFileKey`), so this is safe; the only known false
+ * positive is a same-content node whose keys happen to serialize in a
+ * different order (e.g. one came through `parseCollection`, the other was
+ * built in-session) — always the *safe* direction (an unnecessary re-run,
+ * never a stale result silently reused), so not worth a canonical
+ * key-sorted comparison here.
+ */
+function nodeConfigEqual(a: WorkflowNode | undefined, b: WorkflowNode | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
  * What "Rerun failed" (`run({ fromLastRun: true })`) seeds the next
  * `executeChain` call with — every node from `previousRunResult` that
  * completed without error AND isn't stale, as `ChainExecutorOptions.previousRun`.
@@ -19,21 +42,16 @@ import { isLocked, type WorkflowState } from '../types.js';
  * unit-tested without going through a real `executeChain` call.
  *
  * "Stale" means: this node (or an ancestor of it) completed last run, but
- * its config has since changed. Detected by reference, not a hash/deep-
- * equal — every store mutation that touches a node already does
- * `nodes.map(n => n.id === id ? {...n, field} : n)` (see graphSlice.ts),
- * which leaves every *untouched* node's object reference exactly as it was;
- * only an edited node gets a new one. So `lastRunNodesById.get(id) !==
- * currentNodesById.get(id)` is an exact, free staleness check — no
- * serialization or key-ordering pitfalls a hash-based fingerprint would
- * carry. Staleness cascades forward via `computeDescendants`: a node
- * downstream of an edited one may have consumed its now-stale mapped
- * output, even though the downstream node's own config didn't change.
+ * its config has since changed — see `nodeConfigEqual`. Staleness cascades
+ * forward via `computeDescendants`: a node downstream of an edited one may
+ * have consumed its now-stale mapped output, even though the downstream
+ * node's own config didn't change.
  *
  * Returns `undefined` when there's nothing to resume from (never run
- * before this session) — callers should treat that as "run fresh," not an
- * error; the "Rerun failed" button is also hidden in that case (see
- * App.tsx), so this only matters as a defensive fallback.
+ * before this session, and nothing restored from IndexedDB either) —
+ * callers should treat that as "run fresh," not an error; the "Rerun
+ * failed" button is also hidden in that case (see App.tsx), so this only
+ * matters as a defensive fallback.
  */
 export function buildFromLastRunSeed(
   nodes: WorkflowNode[],
@@ -48,7 +66,7 @@ export function buildFromLastRunSeed(
 
   const staleNodeIds = new Set<string>();
   for (const id of completedNodeIds) {
-    if (currentNodesById.get(id) === lastRunNodesById.get(id)) continue;
+    if (nodeConfigEqual(currentNodesById.get(id), lastRunNodesById.get(id))) continue;
     staleNodeIds.add(id);
     for (const descendantId of computeDescendants(nodes, connections, id)) staleNodeIds.add(descendantId);
   }

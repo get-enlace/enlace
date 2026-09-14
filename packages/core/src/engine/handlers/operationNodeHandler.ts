@@ -80,6 +80,7 @@ export async function buildRequest(
   // `credentials: 'include'` fetch option instead of any injected value at
   // all) — sent straight to the target API, not routed through any adapter.
   const redactQueryParams: string[] = [];
+  const redactHeaderNames: string[] = [];
   // Explicit 'omit' as the base case, not left undefined — see
   // RunStepRequest.credentials's own comment for why: fetch()'s default
   // ('same-origin') would otherwise leak an existing browser cookie on any
@@ -114,6 +115,7 @@ export async function buildRequest(
       }
       const injection = await resolveCredentialInjection(credential, extraTokenParamOverrides);
       Object.assign(headers, injection.headers);
+      redactHeaderNames.push(...Object.keys(injection.headers ?? {}));
       for (const [key, value] of Object.entries(injection.query ?? {})) {
         query.set(key, value);
         redactQueryParams.push(key);
@@ -159,6 +161,7 @@ export async function buildRequest(
     headers,
     body: hasBody ? body : undefined,
     redactQueryParams: redactQueryParams.length > 0 ? redactQueryParams : undefined,
+    redactHeaderNames: redactHeaderNames.length > 0 ? redactHeaderNames : undefined,
     credentials,
   };
 }

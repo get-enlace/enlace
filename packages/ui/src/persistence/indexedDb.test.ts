@@ -4,7 +4,7 @@
 // (not global setup.ts) so no other test's environment changes.
 import 'fake-indexeddb/auto';
 import { afterEach, describe, expect, it } from 'vitest';
-import { idbDelete, idbGet, idbSet, isIndexedDbAvailable } from './indexedDb.js';
+import { dbName, idbDelete, idbGet, idbSet, isIndexedDbAvailable } from './indexedDb.js';
 
 afterEach(async () => {
   await idbDelete('a');
@@ -44,5 +44,54 @@ describe('idbGet/idbSet/idbDelete', () => {
     await idbSet('a', 'value');
     await idbDelete('a');
     expect(await idbGet('a')).toBeUndefined();
+  });
+});
+
+describe('dbName', () => {
+  afterEach(() => {
+    window.history.pushState({}, '', '/');
+  });
+
+  it('normalizes a trailing slash and a literal index.html to the same name', () => {
+    window.history.pushState({}, '', '/app1');
+    const bare = dbName();
+    window.history.pushState({}, '', '/app1/');
+    const trailingSlash = dbName();
+    window.history.pushState({}, '', '/app1/index.html');
+    const indexHtml = dbName();
+
+    expect(trailingSlash).toBe(bare);
+    expect(indexHtml).toBe(bare);
+  });
+
+  it('gives two different mount paths two different names', () => {
+    window.history.pushState({}, '', '/app1/');
+    const app1 = dbName();
+    window.history.pushState({}, '', '/app2/');
+    const app2 = dbName();
+
+    expect(app1).not.toBe(app2);
+  });
+});
+
+describe('same-origin, different mount path: real database isolation', () => {
+  afterEach(async () => {
+    window.history.pushState({}, '', '/app1/');
+    await idbDelete('shared-key');
+    window.history.pushState({}, '', '/app2/');
+    await idbDelete('shared-key');
+    window.history.pushState({}, '', '/');
+  });
+
+  it('keeps two different mount paths in two entirely separate databases, on the same origin', async () => {
+    window.history.pushState({}, '', '/app1/');
+    await idbSet('shared-key', 'from app1');
+
+    window.history.pushState({}, '', '/app2/');
+    expect(await idbGet('shared-key')).toBeUndefined(); // not app1's value
+    await idbSet('shared-key', 'from app2');
+
+    window.history.pushState({}, '', '/app1/');
+    expect(await idbGet('shared-key')).toBe('from app1'); // app2's write didn't clobber it
   });
 });

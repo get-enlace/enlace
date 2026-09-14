@@ -683,6 +683,17 @@ export interface RunStepRequest {
    */
   redactQueryParams?: string[];
   /**
+   * Names of `headers` that hold a credential secret — every header
+   * `resolveCredentialInjection` (engine/credentials.ts) contributed, e.g.
+   * `Authorization` for bearer/basic/oauth2, or an apiKey-in-header
+   * credential's own configured header name (`X-Api-Key`, or whatever the
+   * credential names it — not necessarily `Authorization`, which is why
+   * this exists at all rather than the debug pane just hardcoding that one
+   * name). Same "never used to build the actual request, only to redact
+   * the copy shown/persisted" contract as `redactQueryParams`.
+   */
+  redactHeaderNames?: string[];
+  /**
    * `'include'` only when the node's credential is a `cookie` type,
    * `'omit'` otherwise — always explicit, never left for fetch()'s own
    * default to decide (see engine/chainExecutor.ts's real `fetch()` call).

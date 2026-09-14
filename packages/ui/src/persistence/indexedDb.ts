@@ -9,9 +9,31 @@
  * dependency would be.
  */
 
-const DB_NAME = 'enlace-ui';
+const DB_NAME_PREFIX = 'enlace-ui';
 const DB_VERSION = 1;
 const STORE_NAME = 'autosave';
+
+/**
+ * IndexedDB is scoped to the browser *origin* (scheme+host+port) only, not
+ * path — so two different Enlace-mounted apps reverse-proxied onto the
+ * *same* origin at different paths (a real, supported topology: see
+ * vite.config.ts's `base: './'` and types.ts's `resolveBaseUrl`, both
+ * written specifically so one adapter can be mounted at `/app1/`, another
+ * at `/app2/`, on the same host) would otherwise silently share one
+ * database and overwrite each other's autosave. Namespacing the database
+ * name by mount path keeps them apart. A literal `index.html` suffix and a
+ * trailing slash are normalized away first so the *same* mount doesn't get
+ * treated as a different one just because its URL was typed slightly
+ * differently (`/app1`, `/app1/`, and `/app1/index.html` are all one
+ * mount). `location` is absent outside a browser (this module is only
+ * ever imported client-side, but exported for `indexedDb.test.ts` to
+ * exercise directly).
+ */
+export function dbName(): string {
+  if (typeof location === 'undefined') return DB_NAME_PREFIX;
+  const path = location.pathname.replace(/\/index\.html$/, '').replace(/\/+$/, '') || '/';
+  return `${DB_NAME_PREFIX}::${path}`;
+}
 
 /** False in any environment without IndexedDB at all (older/locked-down browsers, jsdom in tests) — callers use this to skip straight to "no persistence" without an error round-trip. */
 export function isIndexedDbAvailable(): boolean {
@@ -24,7 +46,7 @@ function openDb(): Promise<IDBDatabase> {
       reject(new Error('IndexedDB is not available in this environment.'));
       return;
     }
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    const request = indexedDB.open(dbName(), DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {

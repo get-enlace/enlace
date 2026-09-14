@@ -1,6 +1,7 @@
+import type { RunStepStatus } from '../types.js';
 import { useWorkflowStore } from '../store/workflowStore.js';
 import { formatUnknownOperationsError, parseCollection, serializeCollection } from '../utils/workflowDocument.js';
-import { loadAutosave, saveAutosave } from './autosave.js';
+import { clearRunResult, loadAutosave, loadRunResult, saveAutosave, saveRunResult } from './autosave.js';
 
 const AUTOSAVE_DEBOUNCE_MS = 500;
 
@@ -106,4 +107,70 @@ export async function restoreAutosave(): Promise<void> {
       ? { needsValueIds, secretsDiscarded: warnings.unexpectedSecretsDiscarded }
       : null
   );
+}
+
+/**
+ * Subscribes to two discrete, explicit moments — not a debounced stream —
+ * for what "Rerun failed" (`runSlice.ts`'s `buildFromLastRunSeed`) needs
+ * to keep working across a refresh:
+ *
+ * - A run just settled (`isRunning` went `true` -> `false`) — whether it
+ *   ran to completion, failed partway, or was Stopped, `run()`'s own
+ *   `finally` block (runSlice.ts) is the one place that transition happens,
+ *   exactly once per run. `runResult` itself changes many times *during*
+ *   a run (once per settled step, via `onEvent`) but none of those
+ *   intermediate values are worth a separate disk write — unlike the
+ *   canvas autosave, a run's "last known good state" is only meaningful
+ *   once the run is actually over, so there's nothing to debounce here.
+ * - `runResult` was explicitly reset to `null` (`replaceWorkflow` does
+ *   this — see documentSlice.ts) — the canvas moved on to a different
+ *   workflow, so whatever the old one's run left on disk no longer
+ *   applies to anything on screen and would otherwise linger indefinitely.
+ *
+ * Request secrets are stripped before the write ever happens — see
+ * `autosave.ts`'s `saveRunResult`, not this function's concern.
+ *
+ * Call once at app boot; the returned cleanup unsubscribes — safe under
+ * React StrictMode's mount/unmount/mount dance.
+ */
+export function startRunResultAutosave(): () => void {
+  return useWorkflowStore.subscribe((state, prevState) => {
+    const runJustSettled = prevState.isRunning && !state.isRunning;
+    if (runJustSettled) {
+      const { runResult, lastRunNodesById } = state;
+      if (runResult && lastRunNodesById) void saveRunResult(runResult, lastRunNodesById);
+      return;
+    }
+    if (prevState.runResult !== null && state.runResult === null) {
+      void clearRunResult();
+    }
+  });
+}
+
+/**
+ * Applies the last persisted run result, if any — restores `runResult`,
+ * `lastRunNodesById` (so `buildFromLastRunSeed`'s staleness check has
+ * something to compare against), and a derived `stepStatusByNodeId` (so
+ * the Results pane shows the prior outcome immediately, consistent with
+ * "Rerun failed" reappearing — see `hasResumableFailure`) instead of
+ * looking empty until the user clicks it.
+ *
+ * Call once at boot, **after** `restoreAutosave` — `replaceWorkflow`
+ * (which that calls) resets `runResult` to `null`, so restoring run
+ * results first would just get immediately wiped.
+ */
+export async function restoreRunResult(): Promise<void> {
+  const persisted = await loadRunResult();
+  if (!persisted || persisted.runResult.steps.length === 0) return;
+
+  const stepStatusByNodeId: Record<string, RunStepStatus> = {};
+  for (const step of persisted.runResult.steps) {
+    stepStatusByNodeId[step.nodeId] = step.error ? 'failed' : 'completed';
+  }
+
+  useWorkflowStore.setState({
+    runResult: persisted.runResult,
+    lastRunNodesById: new Map(persisted.lastRunNodes),
+    stepStatusByNodeId,
+  });
 }

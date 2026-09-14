@@ -1,30 +1,10 @@
 import type { RunStepRequest, RunStepResponse } from '../../types.js';
-
-/** An apiKey-in-query credential has no header to redact — its secret lives in `url` itself, named in `redactQueryParams` (see types.ts). Malformed/relative URLs fall back to the raw string rather than throwing inside the debug pane. */
-export function redactUrl(url: string, paramNames: string[] | undefined): string {
-  if (!paramNames || paramNames.length === 0) return url;
-  try {
-    const parsed = new URL(url);
-    for (const name of paramNames) {
-      if (parsed.searchParams.has(name)) parsed.searchParams.set(name, '[redacted]');
-    }
-    return parsed.toString();
-  } catch {
-    return url;
-  }
-}
-
-export function redactRequest(request: RunStepRequest): RunStepRequest {
-  return {
-    ...request,
-    url: redactUrl(request.url, request.redactQueryParams),
-    headers: Object.fromEntries(
-      Object.entries(request.headers).map(([key, value]) =>
-        key.toLowerCase() === 'authorization' ? [key, '[redacted]'] : [key, value]
-      )
-    ),
-  };
-}
+// redactUrl/redactRequest moved to utils/redactRequest.ts — persistence/
+// (autosave of run results) needs them too, not just this component tree.
+// Re-exported so ResultsList.tsx/DebugConsole/context.ts's existing
+// imports from this module keep working unchanged.
+import { redactUrl } from '../../utils/redactRequest.js';
+export { redactRequest, redactUrl } from '../../utils/redactRequest.js';
 
 /** `body` is `unknown` — could be a parsed JSON value, a plain string, FormData
  * (multipart upload), or absent entirely. Pretty-print objects/arrays; show
