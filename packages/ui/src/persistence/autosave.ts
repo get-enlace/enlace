@@ -2,7 +2,7 @@ import type { EnlaceCollection, RunResult, WorkflowNode } from '../types.js';
 import { redactStep } from '../utils/redactRequest.js';
 import { idbDelete, idbGet, idbSet, isIndexedDbAvailable } from './indexedDb.js';
 
-/** Single fixed key — v1 is one autosave slot, not a list of saved workflows (see ROADMAP.md's "Client-side IndexedDB for local persistence" entry). */
+/** Single fixed key — v1 is one autosave slot, not a list of saved workflows. */
 const AUTOSAVE_KEY = 'current';
 /** Separate key, same store — a distinct concern (last run's steps, for "Rerun failed" to survive a refresh) with its own shape, not part of the canvas collection. */
 const RUN_RESULT_KEY = 'lastRun';
@@ -88,8 +88,7 @@ export async function loadRunResult(): Promise<PersistedRunResult | undefined> {
  * masking the live debug pane already applies for display) so a resolved
  * credential secret (an Authorization header, an apiKey-in-header value)
  * never actually reaches disk — `response` is left as-is; that's the
- * target API's own response data, not an Enlace-managed secret (see
- * ROADMAP.md's "Client-side IndexedDB for local persistence" entry).
+ * target API's own response data, not an Enlace-managed secret.
  */
 export async function saveRunResult(runResult: RunResult, lastRunNodesById: Map<string, WorkflowNode>): Promise<void> {
   if (!isIndexedDbAvailable()) return;

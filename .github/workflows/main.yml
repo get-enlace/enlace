@@ -172,8 +172,8 @@ jobs:
             --verify-tag
 
   # Fans out repository_dispatch: enlace-ui-release to every known
-  # downstream adapter repo (release-strategy.md §5/§6), so each can decide
-  # for itself whether it needs to do anything.
+  # downstream adapter repo, so each can decide for itself whether it
+  # needs to do anything.
   #
   # Split into two independent jobs (dev/prod) rather than one job needing
   # both deploy-dev and deploy-prod: deploy-prod can sit behind the
@@ -187,8 +187,8 @@ jobs:
     strategy:
       matrix:
         # Add new adapter repos here as they come online — this is the
-        # entire subscriber list (release-strategy.md §6: no separate
-        # registry file yet, at this scale).
+        # entire subscriber list (no separate registry file yet, at this
+        # scale).
         repo: [enlace-js, enlace-dotnet, enlace-java, enlace-python]
     steps:
       - name: Notify ${{ matrix.repo }} (dev)

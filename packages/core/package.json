@@ -6,7 +6,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/get-enlace/enlace-ui.git",
+    "url": "https://github.com/get-enlace/enlace.git",
     "directory": "packages/core"
   },
   "type": "module",

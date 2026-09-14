@@ -38,8 +38,8 @@ on that repo; it depends on `@get-enlace/ui`, published from here.
 ## Quickstart
 
 ```bash
-git clone https://github.com/get-enlace/enlace-ui.git
-cd enlace-ui
+git clone https://github.com/get-enlace/enlace.git
+cd enlace
 npm install
 npm start
 ```

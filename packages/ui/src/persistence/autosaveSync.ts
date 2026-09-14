@@ -8,8 +8,7 @@ const AUTOSAVE_DEBOUNCE_MS = 500;
 /**
  * Subscribes to every field that feeds a `.enlace` export (see
  * `utils/workflowDocument.ts`'s `serializeCollection`) and debounces a
- * write to IndexedDB on each change — the "don't lose my work" layer from
- * ROADMAP.md's "Client-side IndexedDB for local persistence" entry.
+ * write to IndexedDB on each change — the "don't lose my work" layer.
  * Always serializes with `includeSecrets: false`: credential *values*
  * never touch disk (same rule a stripped `.enlace` export already
  * follows) — only credential stubs persist, so a restored session still

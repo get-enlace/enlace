@@ -1,4 +1,4 @@
-# Contributing to enlace-ui
+# Contributing to enlace
 
 ## Development
 
@@ -46,9 +46,7 @@ useful context before making a non-trivial change.
   out a `repository_dispatch: enlace-ui-release` to every known adapter
   repo (currently `enlace-js`, `enlace-dotnet`, `enlace-java`,
   `enlace-python`), so each can decide for itself whether it needs to
-  fetch the new build — see
-  [`release-strategy.md`](../release-strategy.md) for the full cross-repo
-  picture.
+  fetch the new build.
 
 One-time setup this needs, done in the repo's GitHub settings, not in code:
 - A `development` environment and a `production` environment (the latter

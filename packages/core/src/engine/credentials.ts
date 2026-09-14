@@ -84,7 +84,7 @@ async function requestOAuth2Token(
 ): Promise<{ accessToken: string; expiresInSeconds: number }> {
   // Direct browser -> auth server call — same "browser talks straight to
   // the target" relationship as the actual API request, no adapter
-  // round-trip. The secret never touches enlace-ui's own server side
+  // round-trip. The secret never touches enlace's own server side
   // because there isn't one.
   const headers: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded' };
   // `client_secret_basic` (RFC 6749 §2.3.1) — clientId/clientSecret go on
