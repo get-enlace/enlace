@@ -10,3 +10,4 @@ export { ChromeSettingsMenu, RunControls, WorkflowSwitcher } from './Chrome/inde
 export { DebugPane } from './DebugPane/index.js';
 export { NodeConfig, NodeConfigShell, NODE_CONFIG_DEFAULT_WIDTH } from './NodeConfig/index.js';
 export { OperationList } from './Operations/index.js';
+export type { OperationListHandle } from './Operations/index.js';

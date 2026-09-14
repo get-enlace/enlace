@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App.js';
 import { useWorkflowStore } from './store/workflowStore.js';
@@ -270,6 +270,34 @@ describe('App', () => {
       expect(document.querySelector('.run-segment [aria-label="Continue"]')).toBeDisabled();
       expect(document.querySelector('.run-segment [aria-label="Step"]')).toBeDisabled();
       expect(document.querySelector('.run-segment [aria-label="Stop"]')).not.toBeDisabled();
+    });
+  });
+
+  describe('press space to search', () => {
+    it('jumps focus to the operation/preset search box when nothing editable is focused', () => {
+      render(<App />);
+      document.body.focus();
+
+      // A real keydown always targets whatever's actually focused (and
+      // bubbles to `document`, where this app's own listener lives) —
+      // firing it on `document` itself isn't a real event shape and
+      // trips up React Flow's own document-level key handler, which
+      // expects a real Element target.
+      fireEvent.keyDown(document.activeElement!, { key: ' ' });
+
+      expect(screen.getByLabelText('Search operations and presets')).toHaveFocus();
+    });
+
+    it('leaves an already-focused editable element alone instead of hijacking its space keystroke', () => {
+      render(<App />);
+      const scratch = document.createElement('textarea');
+      document.body.appendChild(scratch);
+      scratch.focus();
+
+      fireEvent.keyDown(document.activeElement!, { key: ' ' });
+
+      expect(scratch).toHaveFocus();
+      document.body.removeChild(scratch);
     });
   });
 });

@@ -1,7 +1,8 @@
+import { createRef } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { OperationList } from './OperationList.js';
+import { OperationList, type OperationListHandle } from './OperationList.js';
 import type { Operation } from '../../types.js';
 
 function makeOperation(overrides: Partial<Operation>): Operation {
@@ -311,5 +312,14 @@ describe('OperationList', () => {
       expect(screen.getByText('opA')).toBeInTheDocument();
       expect(screen.getByText('opB')).toBeInTheDocument();
     });
+  });
+
+  it('exposes focusSearch via ref, for the app-level "press space to search" shortcut', () => {
+    const ref = createRef<OperationListHandle>();
+    render(<OperationList ref={ref} operations={[]} />);
+
+    ref.current?.focusSearch();
+
+    expect(screen.getByLabelText('Search operations and presets')).toHaveFocus();
   });
 });

@@ -1,8 +1,13 @@
-import { useState } from 'react';
+import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import type { Operation } from '../../types.js';
 
 interface Props {
   operations: Operation[];
+}
+
+/** Imperative handle so App.tsx's global "press space to search" shortcut can focus this panel's search box without lifting its query state up. */
+export interface OperationListHandle {
+  focusSearch: () => void;
 }
 
 const UNTAGGED = '(untagged)';
@@ -38,7 +43,10 @@ function groupOperations(ops: Operation[]): Array<{ tag: string; operations: Ope
     .map((tag) => ({ tag, operations: map.get(tag)! }));
 }
 
-export function OperationList({ operations }: Props) {
+export const OperationList = forwardRef<OperationListHandle, Props>(function OperationList({ operations }, ref) {
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  useImperativeHandle(ref, () => ({ focusSearch: () => searchInputRef.current?.focus() }));
+
   const [query, setQuery] = useState('');
   // Empty = all collapsed. Search temporarily expands every visible
   // (already-filtered) group; clearing the query returns to this set.
@@ -118,6 +126,7 @@ export function OperationList({ operations }: Props) {
           between them. */}
       <div className="operation-list__search">
         <input
+          ref={searchInputRef}
           type="text"
           placeholder="Search by operationId or preset, /path…, .preset…"
           aria-label="Search operations and presets"
@@ -194,4 +203,4 @@ export function OperationList({ operations }: Props) {
       )}
     </aside>
   );
-}
+});
