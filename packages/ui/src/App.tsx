@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWorkflowStore } from './store/workflowStore.js';
 import { hasResumableFailure } from './store/slices/runSlice.js';
+import { restoreAutosave, startAutosave } from './persistence/autosaveSync.js';
 import {
   Canvas,
   ChromeSettingsMenu,
@@ -54,7 +55,20 @@ export default function App() {
   const operationListRef = useRef<OperationListHandle>(null);
 
   useEffect(() => {
-    loadOperations();
+    let cancelled = false;
+    // Wait for the spec before restoring — restoreAutosave's own
+    // unknown-operation-id check needs `operations` populated to be
+    // meaningful (see its own comment). startAutosave is independent of
+    // that and subscribes right away, so nothing typed during the brief
+    // load window goes unsaved.
+    void loadOperations().then(() => {
+      if (!cancelled) void restoreAutosave();
+    });
+    const stopAutosave = startAutosave();
+    return () => {
+      cancelled = true;
+      stopAutosave();
+    };
   }, [loadOperations]);
 
   // Press space anywhere that isn't itself asking for text (a field, a
