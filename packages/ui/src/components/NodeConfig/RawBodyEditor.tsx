@@ -18,6 +18,7 @@ import type { BodyTag, BodyTagType, Operation, RawBody, WorkflowNode } from '../
 import { BeautifyIcon } from '../chromeIcons.js';
 import { TagConfigModal } from './TagConfigModal.js';
 import { buildTagAutoCloneExtension, chipPlugin, cloneTagsEffect, refreshChips, scripted, type ChipConfig } from './tagChipDecorations.js';
+import { useThemeStore } from '../../store/themeStore.js';
 
 export interface RawBodyEditorProps {
   rawBody: RawBody;
@@ -232,7 +233,9 @@ export function buildJsonAutocompleteExtensions(
   onTriggerTag: (type: BodyTagType, from: number, to: number) => void,
   allowFileUpload = false,
   allowRandom = false,
-  compact = false
+  compact = false,
+  /** Which of CodeMirror's own base-theme variants to activate — see the `EditorView.theme` call below for why this has to match whichever theme is actually painting the surface underneath it. Defaults to `true` (dark) purely so existing call sites/tests that build this list directly (bypassing RawBodyEditor's own live theme prop) keep their prior behavior unchanged. */
+  dark = true
 ): Extension[] {
   return [
     json(),
@@ -257,13 +260,13 @@ export function buildJsonAutocompleteExtensions(
     ...(allowRandom ? [randExpressionHighlightPlugin()] : []),
     EditorView.lineWrapping,
     // CodeMirror defaults to its *light* base theme (caret-color: black)
-    // unless told otherwise — our CSS paints this editor with a near-
-    // black background to match the app's dark palette, so without this
-    // the caret is black-on-black and never visible, even though it's
-    // there and blinking. This flips the `dark` facet so the base
-    // theme's `&dark` caret/selection/active-line defaults (white caret,
-    // etc.) apply instead.
-    EditorView.theme({}, { dark: true }),
+    // unless told otherwise — this surface's own background (raw-body.css's
+    // `--color-code-bg`) follows the app's actual theme, so the `dark` facet
+    // has to follow it too: a light-on-light or dark-on-dark base-theme
+    // mismatch here means an invisible (but still blinking) caret. See
+    // RawBodyEditor's own `resolvedTheme` read, the only real caller that
+    // doesn't just take this `true` default.
+    EditorView.theme({}, { dark }),
     // Autocomplete's popup is (by default) appended as a plain child of
     // the editor's own root element and positioned `fixed` — but our
     // wrapper CSS sets `overflow: hidden` (for the rounded-corner look),
@@ -300,6 +303,11 @@ export function RawBodyEditor({
   // remount, which is fine since a Compartment has no state of its own
   // beyond being a handle into one EditorView's extension tree.
   const readOnlyCompartmentRef = useRef(new Compartment());
+  // Drives the mount effect's own dependency array below — a theme flip
+  // rebuilds the view from scratch (cheap, and rare enough that losing
+  // cursor position/undo history for a moment is a non-issue) rather than
+  // adding a second Compartment just for this one flag.
+  const isDark = useThemeStore((s) => s.resolved === 'dark');
 
   const [pendingInsert, setPendingInsert] = useState<{ type: BodyTagType; from: number; to: number } | null>(null);
   const [editingTagId, setEditingTagId] = useState<string | null>(null);
@@ -342,7 +350,8 @@ export function RawBodyEditor({
         (type, from, to) => setPendingInsert({ type, from, to }),
         allowFileUpload,
         allowRandom,
-        compact
+        compact,
+        isDark
       ),
       buildTagAutoCloneExtension(() => liveRef.current.rawBody.tags),
       chipPluginType,
@@ -364,8 +373,11 @@ export function RawBodyEditor({
     viewRef.current = view;
 
     return () => view.destroy();
+    // Only `isDark` — every other captured value (ancestorNodes, tags,
+    // etc.) is intentionally excluded; those already have their own
+    // targeted effects below instead of tearing the whole view down.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isDark]);
 
   // Reflect external template changes (e.g. Form -> Raw regeneration, or a
   // fresh node selection) into the editor. A no-op when the last change

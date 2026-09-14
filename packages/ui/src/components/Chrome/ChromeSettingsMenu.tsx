@@ -1,7 +1,23 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type ComponentType } from 'react';
 import { useWorkflowStore } from '../../store/workflowStore.js';
+import { useThemeStore, type ThemePreference } from '../../store/themeStore.js';
 import { CredentialsPanel } from '../Credentials/index.js';
 import { WorkflowFileMenu, type WorkflowFileMenuHandle } from './WorkflowFileMenu.js';
+
+// One button, one icon at a time — clicking cycles System -> Light -> Dark
+// -> System, same "single control that changes" feel as Docusaurus's own
+// navbar toggle, rather than three always-visible options sitting side by
+// side. Order matters here: it's the click order too, not just display.
+const THEME_CYCLE: Array<{ value: ThemePreference; label: string; Icon: ComponentType }> = [
+  { value: 'system', label: 'System', Icon: SystemIcon },
+  { value: 'light', label: 'Light', Icon: SunIcon },
+  { value: 'dark', label: 'Dark', Icon: MoonIcon },
+];
+
+function nextThemePreference(current: ThemePreference): ThemePreference {
+  const index = THEME_CYCLE.findIndex((o) => o.value === current);
+  return THEME_CYCLE[(index + 1) % THEME_CYCLE.length].value;
+}
 
 /**
  * Chrome-corner settings: Credentials, Export, and Import live behind one
@@ -11,6 +27,8 @@ export function ChromeSettingsMenu() {
   const credentials = useWorkflowStore((s) => s.credentials);
   const nodes = useWorkflowStore((s) => s.nodes);
   const isRunning = useWorkflowStore((s) => s.isRunning);
+  const themePreference = useThemeStore((s) => s.preference);
+  const setThemePreference = useThemeStore((s) => s.setPreference);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [credsOpen, setCredsOpen] = useState(false);
@@ -110,6 +128,26 @@ export function ChromeSettingsMenu() {
               <ImportIcon />
               <span>Import</span>
             </button>
+
+            <div className="chrome-settings__divider" role="separator" />
+
+            {(() => {
+              const current = THEME_CYCLE.find((o) => o.value === themePreference) ?? THEME_CYCLE[0];
+              const Icon = current.Icon;
+              return (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="chrome-settings__item chrome-settings__theme-toggle"
+                  aria-label={`Theme: ${current.label} (click to switch)`}
+                  title={`Theme: ${current.label} — click to switch`}
+                  onClick={() => setThemePreference(nextThemePreference(themePreference))}
+                >
+                  <Icon />
+                  <span>Theme: {current.label}</span>
+                </button>
+              );
+            })()}
           </div>
         )}
       </div>
@@ -160,6 +198,51 @@ function ImportIcon() {
         fill="currentColor"
         d="M8 10.5 11.5 7h-2V3h-3v4h-2L8 10.5zM3 12v1.5h10V12H3z"
       />
+    </svg>
+  );
+}
+
+function SunIcon() {
+  return (
+    <svg className="chrome-settings__item-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+      <circle cx="8" cy="8" r="3.2" fill="currentColor" />
+      <g stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+        <line x1="8" y1="0.8" x2="8" y2="2.6" />
+        <line x1="8" y1="13.4" x2="8" y2="15.2" />
+        <line x1="0.8" y1="8" x2="2.6" y2="8" />
+        <line x1="13.4" y1="8" x2="15.2" y2="8" />
+        <line x1="2.87" y1="2.87" x2="4.16" y2="4.16" />
+        <line x1="11.84" y1="11.84" x2="13.13" y2="13.13" />
+        <line x1="2.87" y1="13.13" x2="4.16" y2="11.84" />
+        <line x1="11.84" y1="4.16" x2="13.13" y2="2.87" />
+      </g>
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  // A crescent silhouette — a filled circle with a second, offset circle
+  // masked out of it — rather than a hand-picked path, so the shape is
+  // guaranteed to actually render as a crescent regardless of the exact
+  // radii/offset chosen. `maskId` is per-instance (useId) so this stays
+  // correct even if this icon is ever mounted more than once at a time.
+  const maskId = useId();
+  return (
+    <svg className="chrome-settings__item-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+      <mask id={maskId}>
+        <rect width="16" height="16" fill="#fff" />
+        <circle cx="10.5" cy="5.5" r="5" fill="#000" />
+      </mask>
+      <circle cx="7.5" cy="8" r="6.5" fill="currentColor" mask={`url(#${maskId})`} />
+    </svg>
+  );
+}
+
+function SystemIcon() {
+  return (
+    <svg className="chrome-settings__item-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4">
+      <rect x="1.3" y="2.3" width="13.4" height="9" rx="1.2" />
+      <path strokeLinecap="round" d="M5.5 14h5M8 11.3V14" />
     </svg>
   );
 }

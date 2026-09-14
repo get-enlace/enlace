@@ -37,6 +37,22 @@ Range.prototype.getBoundingClientRect ??= function getBoundingClientRect() {
   } as DOMRect;
 };
 
+// jsdom doesn't implement matchMedia (a real browser API) — themeStore.ts
+// uses it to resolve/track the 'system' theme preference. Defaults to
+// "OS prefers light" (matches: false); tests that care about a specific
+// resolved theme set it explicitly via useThemeStore, same as any other
+// store state (see e.g. RawBodyEditor.test.tsx's dark/light theme tests).
+globalThis.matchMedia ??= ((query: string) => ({
+  matches: false,
+  media: query,
+  onchange: null,
+  addEventListener: () => {},
+  removeEventListener: () => {},
+  addListener: () => {},
+  removeListener: () => {},
+  dispatchEvent: () => false,
+})) as unknown as typeof matchMedia;
+
 // React Testing Library's auto-cleanup relies on detecting a global
 // `afterEach` (as Jest provides one); this project doesn't set vitest's
 // `globals: true` (keeps `describe`/`it`/`expect` explicitly imported,

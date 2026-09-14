@@ -184,8 +184,8 @@
 .raw-body-editor__codemirror .cm-editor {
   font-family: var(--font-mono);
   font-size: 12px;
-  background: #101113;
-  color: #d8dde3;
+  background: var(--color-code-bg);
+  color: var(--color-code-text);
 }
 
 .raw-body-editor__codemirror .cm-editor.cm-focused {

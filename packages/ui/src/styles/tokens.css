@@ -61,6 +61,53 @@
    * busy canvas. */
   --color-presets: #7c93fd;
   --color-presets-bg: rgba(124, 147, 253, 0.14);
+
+  /* A "code surface" — the Body editor's own CodeMirror background plus
+   * every plain (non-editable) JSON/response preview block that wants the
+   * same look (TagConfigModal's Live Preview, the debugger's request/
+   * response dumps) — deliberately its own pair of tokens rather than
+   * reusing --color-panel-bg/--color-text: this surface reads as "a block
+   * of code," consistently, regardless of which panel it's sitting inside. */
+  --color-code-bg: #101113;
+  --color-code-text: #d8dde3;
+
+  /* A canvas node-group's own frame (collapsed card / expanded outline,
+   * GroupNodeCard.tsx) — visibly more prominent than an ordinary
+   * --color-border hairline (a group boundary needs to read clearly even
+   * with member cards' own borders sitting right next to it), and the
+   * frame's own fill, at two opacities: --collapsed-bg reads as a compact
+   * solid-ish card, --expanded-bg as a light background wash behind full-size
+   * member cards. */
+  --color-group-border: #5a5a60;
+  --color-group-collapsed-bg: rgba(32, 33, 36, 0.85);
+  --color-group-expanded-bg: rgba(32, 33, 36, 0.45);
+}
+
+/*
+ * Light theme — same structure as :root above, only the neutral surface/
+ * text tokens change (method colors, credential-type accents, and status
+ * colors stay identical across both themes; they're accents, not surfaces,
+ * and already carry enough contrast on either background). Applied via a
+ * `data-theme` attribute the theme store (store/themeStore.ts) stamps onto
+ * `<html>` — always a concrete "light"/"dark", resolving "system" itself,
+ * never left for a `prefers-color-scheme` media query to decide here, so
+ * this file only ever needs to know about the two concrete themes.
+ */
+:root[data-theme='light'] {
+  --color-bg: #f6f7f8;
+  --color-panel-bg: #ffffff;
+  --color-node-bg: rgba(255, 255, 255, 0.14);
+  --color-topbar-bg: #ffffff;
+  --color-border: #dcdee1;
+  --color-text: #1b1b1b;
+  --color-text-muted: #5f6368;
+
+  --color-code-bg: #eef0f2;
+  --color-code-text: #1b1b1b;
+
+  --color-group-border: #b0b3b8;
+  --color-group-collapsed-bg: rgba(255, 255, 255, 0.85);
+  --color-group-expanded-bg: rgba(255, 255, 255, 0.55);
 }
 
 * {

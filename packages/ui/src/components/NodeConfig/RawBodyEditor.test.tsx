@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { EditorState, Transaction } from '@codemirror/state';
@@ -8,6 +8,7 @@ import { json } from '@codemirror/lang-json';
 import { RawBodyEditor, buildJsonAutocompleteExtensions } from './RawBodyEditor.js';
 import { buildTagAutoCloneExtension, cloneTagsEffect } from './tagChipDecorations.js';
 import { buildNodeLabels } from '@get-enlace/core';
+import { useThemeStore } from '../../store/themeStore.js';
 import type { BodyTag, Operation, RawBody, WorkflowNode } from '../../types.js';
 
 function node(id: string, operationId: string): WorkflowNode {
@@ -31,6 +32,15 @@ const opsById = new Map(ops.map((o) => [o.id, o]));
 const labelsFor = (nodes: WorkflowNode[]) => buildNodeLabels(nodes, opsById);
 
 describe('RawBodyEditor', () => {
+  // Theme is app-global, module-level state (see store/themeStore.ts) —
+  // pinned to 'dark' here so every test in this file (bar the two that
+  // exercise theming directly, below) renders against the same known
+  // theme regardless of run order or what an earlier test left behind,
+  // same reasoning useWorkflowStore.setState() resets get elsewhere.
+  beforeEach(() => {
+    useThemeStore.setState({ preference: 'dark', resolved: 'dark' });
+  });
+
   it('renders the initial template text inside the CodeMirror doc', async () => {
     const rawBody: RawBody = { template: '{"name":"widget"}', tags: {} };
     const { container } = render(
@@ -230,12 +240,13 @@ describe('RawBodyEditor', () => {
     expect(document.activeElement).toBe(content);
   });
 
-  it('activates CodeMirror\'s dark theme facet, so the base theme\'s caret is visible against our dark background', async () => {
+  it('activates CodeMirror\'s dark theme facet in dark mode, so the base theme\'s caret is visible against our dark background', async () => {
     // Regression test for a real bug: CodeMirror defaults to its *light*
     // base theme (caret-color: black) unless told otherwise. Our CSS
     // paints this editor with a near-black background to match the app's
     // dark palette, so an un-flipped editor has a black-on-black,
     // effectively invisible caret — it blinks, it's just never seen.
+    useThemeStore.setState({ preference: 'dark', resolved: 'dark' });
     const rawBody: RawBody = { template: '{"a":1}', tags: {} };
     const { container } = render(<RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} operations={[]} />);
     const content = await waitFor(() => {
@@ -244,6 +255,18 @@ describe('RawBodyEditor', () => {
       return el!;
     });
     expect(getComputedStyle(content).caretColor).toBe('rgb(255, 255, 255)');
+  });
+
+  it('switches to the light theme facet in light mode, so the caret stays visible against our light background', async () => {
+    useThemeStore.setState({ preference: 'light', resolved: 'light' });
+    const rawBody: RawBody = { template: '{"a":1}', tags: {} };
+    const { container } = render(<RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} operations={[]} />);
+    const content = await waitFor(() => {
+      const el = container.querySelector('.cm-content');
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    expect(getComputedStyle(content).caretColor).toBe('rgb(0, 0, 0)');
   });
 
   it('mounts the tag-autocomplete popup on document.body rather than inside a clipped ancestor', async () => {

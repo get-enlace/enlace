@@ -198,6 +198,12 @@
   cursor: not-allowed;
 }
 
+.chrome-settings__divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--color-border);
+}
+
 .btn {
   border: none;
   border-radius: 4px;

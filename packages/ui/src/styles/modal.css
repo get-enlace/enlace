@@ -92,8 +92,8 @@
 }
 
 .tag-config-modal__preview pre {
-  background: #101113;
-  color: #d8dde3;
+  background: var(--color-code-bg);
+  color: var(--color-code-text);
   padding: 8px 10px;
   border-radius: 4px;
   overflow-x: auto;

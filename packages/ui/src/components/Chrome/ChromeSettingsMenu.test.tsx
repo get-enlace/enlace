@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ChromeSettingsMenu } from './ChromeSettingsMenu.js';
 import { useWorkflowStore } from '../../store/workflowStore.js';
+import { useThemeStore } from '../../store/themeStore.js';
 
 describe('ChromeSettingsMenu', () => {
   beforeEach(() => {
@@ -16,6 +17,7 @@ describe('ChromeSettingsMenu', () => {
       operations: [],
       specInfo: null,
     });
+    useThemeStore.setState({ preference: 'system', resolved: 'light' });
   });
 
   it('opens a settings menu with Credentials, Export, and Import', async () => {
@@ -88,5 +90,46 @@ describe('ChromeSettingsMenu', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Export' }));
 
     expect(screen.getByRole('dialog', { name: 'Export Enlace collection' })).toBeInTheDocument();
+  });
+
+  describe('theme toggle', () => {
+    it('shows a single button reflecting the current preference, System by default', async () => {
+      const user = userEvent.setup();
+      render(<ChromeSettingsMenu />);
+      await user.click(screen.getByRole('button', { name: 'Settings' }));
+
+      expect(screen.getByRole('menuitem', { name: /Theme: System/ })).toBeInTheDocument();
+      expect(screen.queryByRole('menuitem', { name: /Theme: Light/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('menuitem', { name: /Theme: Dark/ })).not.toBeInTheDocument();
+    });
+
+    it('clicking cycles System -> Light -> Dark -> System, updating the store each time', async () => {
+      const user = userEvent.setup();
+      render(<ChromeSettingsMenu />);
+      await user.click(screen.getByRole('button', { name: 'Settings' }));
+
+      await user.click(screen.getByRole('menuitem', { name: /Theme: System/ }));
+      expect(useThemeStore.getState().preference).toBe('light');
+      expect(screen.getByRole('menuitem', { name: /Theme: Light/ })).toBeInTheDocument();
+
+      await user.click(screen.getByRole('menuitem', { name: /Theme: Light/ }));
+      expect(useThemeStore.getState().preference).toBe('dark');
+      expect(screen.getByRole('menuitem', { name: /Theme: Dark/ })).toBeInTheDocument();
+
+      await user.click(screen.getByRole('menuitem', { name: /Theme: Dark/ }));
+      expect(useThemeStore.getState().preference).toBe('system');
+      expect(screen.getByRole('menuitem', { name: /Theme: System/ })).toBeInTheDocument();
+    });
+
+    it('the choice survives closing and reopening the menu', async () => {
+      const user = userEvent.setup();
+      render(<ChromeSettingsMenu />);
+      await user.click(screen.getByRole('button', { name: 'Settings' }));
+      await user.click(screen.getByRole('menuitem', { name: /Theme: System/ }));
+
+      await user.click(screen.getByRole('button', { name: 'Settings' }));
+      await user.click(screen.getByRole('button', { name: 'Settings' }));
+      expect(screen.getByRole('menuitem', { name: /Theme: Light/ })).toBeInTheDocument();
+    });
   });
 });

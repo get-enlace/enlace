@@ -355,7 +355,7 @@
 
 .debug-console__input .cm-content {
   padding: 4px 0;
-  caret-color: #fff;
+  caret-color: var(--color-text);
 }
 
 .debug-console__input .cm-line {
@@ -587,8 +587,8 @@
 }
 
 .debug-body__pre {
-  background: #101113;
-  color: #d8dde3;
+  background: var(--color-code-bg);
+  color: var(--color-code-text);
   padding: 10px 12px;
   border-radius: 4px;
   overflow: auto;
@@ -727,8 +727,8 @@ details.debugger-row > .debugger-row__summary::-webkit-details-marker {
 }
 
 .debugger-row__json {
-  background: #101113;
-  color: #d8dde3;
+  background: var(--color-code-bg);
+  color: var(--color-code-text);
   padding: 10px 12px;
   border-radius: 4px;
   overflow: auto;

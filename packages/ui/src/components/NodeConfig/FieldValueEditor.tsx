@@ -7,6 +7,7 @@ import { makeTagPlaceholder, tagPattern } from '@get-enlace/core';
 import type { BodyTag, BodyTagType, Operation, RawBody, WorkflowNode } from '../../types.js';
 import { TagConfigModal } from './TagConfigModal.js';
 import { buildTagAutoCloneExtension, chipPlugin, cloneTagsEffect, refreshChips, scripted, type ChipConfig } from './tagChipDecorations.js';
+import { useThemeStore } from '../../store/themeStore.js';
 
 export interface FieldValueEditorProps {
   /** Param/header name this field is for — rendered inline immediately before the field's own input box. */
@@ -42,6 +43,9 @@ export function FieldValueEditor({ label, value, onChange, ancestorNodes, nodeLa
   const liveRef = useRef({ value, onChange });
   liveRef.current = { value, onChange };
   const readOnlyCompartmentRef = useRef(new Compartment());
+  // Same reasoning as RawBodyEditor.tsx's own isDark — drives a full
+  // rebuild on theme flip rather than a second Compartment.
+  const isDark = useThemeStore((s) => s.resolved === 'dark');
 
   const [pendingInsert, setPendingInsert] = useState<{ type: BodyTagType; from: number; to: number } | null>(null);
   const [editingTagId, setEditingTagId] = useState<string | null>(null);
@@ -79,7 +83,7 @@ export function FieldValueEditor({ label, value, onChange, ancestorNodes, nodeLa
     const chipPluginType = chipPlugin(configRef);
 
     const extensions: Extension[] = [
-      ...buildScalarExtensions((type, from, to) => setPendingInsert({ type, from, to })),
+      ...buildScalarExtensions((type, from, to) => setPendingInsert({ type, from, to }), isDark),
       buildTagAutoCloneExtension(() => liveRef.current.value.tags),
       chipPluginType,
       EditorView.atomicRanges.of((view) => view.plugin(chipPluginType)?.decorations ?? Decoration.none),
@@ -94,8 +98,9 @@ export function FieldValueEditor({ label, value, onChange, ancestorNodes, nodeLa
       view.destroy();
       viewRef.current = null;
     };
+    // Only `isDark` — see RawBodyEditor.tsx's identical mount effect for why.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isDark]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -216,12 +221,16 @@ function scalarTagCompletionSource(onTrigger: (type: BodyTagType, from: number, 
 }
 
 /** The extension set for a single-line field doc — no JSON language, no gutters/folding/lint (a field is one scalar, never structured), and Enter is swallowed rather than inserting a newline. */
-function buildScalarExtensions(onTriggerTag: (type: BodyTagType, from: number, to: number) => void): Extension[] {
+function buildScalarExtensions(
+  onTriggerTag: (type: BodyTagType, from: number, to: number) => void,
+  /** See RawBodyEditor.tsx's `buildJsonAutocompleteExtensions`'s own `dark` param — same reasoning, same default. */
+  dark = true
+): Extension[] {
   return [
     history(),
     keymap.of([{ key: 'Enter', run: () => true }, ...defaultKeymap, ...historyKeymap]),
     autocompletion({ override: [scalarTagCompletionSource(onTriggerTag)] }),
-    EditorView.theme({}, { dark: true }),
+    EditorView.theme({}, { dark }),
     tooltips({ parent: document.body }),
   ];
 }
