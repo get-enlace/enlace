@@ -127,6 +127,7 @@ export default function App() {
             onRun={() => run()}
             onDebug={() => run({ useBreakpoints: true })}
             onRerunFailed={() => run({ fromLastRun: true })}
+            onDebugFailed={() => run({ fromLastRun: true, useBreakpoints: true })}
             onContinue={continueExecution}
             onStep={() => stepTarget && stepNode(stepTarget)}
             onStop={stopExecution}

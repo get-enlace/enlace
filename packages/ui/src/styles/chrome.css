@@ -253,11 +253,16 @@
   gap: 8px;
 }
 
-/* Segmented execution cluster — Run|Debug(|Rerun failed) idle,
-   Continue|Step|Stop while debugging. min-width, not width — holds the
-   2-button idle/running size steady (nothing shorter ever renders here) but
-   lets the row grow by one slot when Rerun failed becomes showable, rather
-   than reserving dead space for it before anything's ever run. */
+/* Segmented execution cluster — Run(+Rerun-failed icon)|Debug(+Debug-failed
+   icon) idle, Continue|Step|Stop while debugging. min-width, not width —
+   holds the 2-button idle/running size steady (nothing shorter ever renders
+   here) but lets the row grow by an icon's width once there's something to
+   resume, rather than reserving dead space for it before anything's ever
+   run. overflow: hidden clips the flat-colored buttons to the container's
+   own rounded corners — safe now that nothing in here is ever absolutely
+   positioned outside a button's own box (a dropdown menu was tried and
+   dropped for exactly that reason: it got clipped along with everything
+   else and never became visible). */
 .run-segment {
   display: inline-flex;
   align-items: stretch;
@@ -326,15 +331,14 @@
   color: #ffb14a;
 }
 
-/* Teal — distinct from Run's green and Debug's amber, same soft-fill
-   treatment as --debug above rather than a solid block. */
-.run-segment__btn--rerun {
-  background: var(--color-patch-bg);
-  color: var(--color-patch);
-}
-
-.run-segment__btn--rerun:not(:disabled):hover {
-  filter: brightness(1.15);
+/* Rerun failed / Debug failed — narrow, icon-only, tucked right next to the
+   action they're a resume-variant of. Overrides the flex:1 a plain
+   .run-segment__btn gets, so it doesn't compete for width with Run/Debug's
+   own label; keeps whichever color modifier (--primary/--debug) its sibling
+   has, so it reads as that button's own variant rather than a third color. */
+.run-segment__btn--icon {
+  flex: 0 0 auto;
+  padding: 6px 10px;
 }
 
 .run-segment__btn--stop {

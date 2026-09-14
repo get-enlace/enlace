@@ -68,11 +68,12 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: 'Debug' })).not.toBeInTheDocument();
   });
 
-  describe('Rerun failed', () => {
+  describe('Rerun failed / Debug failed', () => {
     it('is hidden before anything has ever run', () => {
       useWorkflowStore.setState({ runResult: null });
       render(<App />);
       expect(screen.queryByRole('button', { name: 'Rerun failed' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Debug failed' })).not.toBeInTheDocument();
     });
 
     it('is hidden after a fully successful run', () => {
@@ -91,9 +92,10 @@ describe('App', () => {
       });
       render(<App />);
       expect(screen.queryByRole('button', { name: 'Rerun failed' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Debug failed' })).not.toBeInTheDocument();
     });
 
-    it('shows once the last run left a failure, and calls run({ fromLastRun: true }) when clicked', async () => {
+    it('shows once the last run left a failure, and Rerun failed calls run({ fromLastRun: true })', async () => {
       const user = userEvent.setup();
       const run = vi.fn();
       useWorkflowStore.setState({
@@ -113,9 +115,32 @@ describe('App', () => {
       });
       render(<App />);
 
-      const button = screen.getByRole('button', { name: 'Rerun failed' });
-      await user.click(button);
+      await user.click(screen.getByRole('button', { name: 'Rerun failed' }));
       expect(run).toHaveBeenLastCalledWith({ fromLastRun: true });
+    });
+
+    it('Debug failed calls run({ fromLastRun: true, useBreakpoints: true })', async () => {
+      const user = userEvent.setup();
+      const run = vi.fn();
+      useWorkflowStore.setState({
+        run,
+        nodes: [{ id: 'a', kind: 'operation', operationId: 'a', credentialId: null }],
+        runResult: {
+          steps: [
+            {
+              nodeId: 'a',
+              request: { method: 'GET', url: 'http://x/a', headers: {}, credentials: 'omit' },
+              timestampStart: '2026-01-01T00:00:00.000Z',
+              timestampEnd: '2026-01-01T00:00:01.000Z',
+              error: 'status 500',
+            },
+          ],
+        },
+      });
+      render(<App />);
+
+      await user.click(screen.getByRole('button', { name: 'Debug failed' }));
+      expect(run).toHaveBeenLastCalledWith({ fromLastRun: true, useBreakpoints: true });
     });
 
     it('is hidden while a run is in progress, even with a failure on record', () => {
@@ -136,6 +161,7 @@ describe('App', () => {
       });
       render(<App />);
       expect(screen.queryByRole('button', { name: 'Rerun failed' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Debug failed' })).not.toBeInTheDocument();
     });
   });
 

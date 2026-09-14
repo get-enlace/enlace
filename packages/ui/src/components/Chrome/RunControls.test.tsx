@@ -12,6 +12,7 @@ const idleProps = {
   onRun: vi.fn(),
   onDebug: vi.fn(),
   onRerunFailed: vi.fn(),
+  onDebugFailed: vi.fn(),
   onContinue: vi.fn(),
   onStep: vi.fn(),
   onStop: vi.fn(),
@@ -26,24 +27,42 @@ describe('RunControls', () => {
     expect(screen.getByRole('button', { name: 'Debug' })).toBeInTheDocument();
   });
 
-  it('hides Rerun failed by default, shows it once canRerunFailed is true, and calls onRerunFailed', async () => {
-    const user = userEvent.setup();
-    const onRerunFailed = vi.fn();
+  it('hides Rerun failed and Debug failed by default, shows both once canRerunFailed is true', () => {
     const { rerender } = render(<RunControls {...idleProps} />);
     expect(screen.queryByRole('button', { name: 'Rerun failed' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Debug failed' })).not.toBeInTheDocument();
 
-    rerender(<RunControls {...idleProps} canRerunFailed onRerunFailed={onRerunFailed} />);
-    const button = screen.getByRole('button', { name: 'Rerun failed' });
-    await user.click(button);
+    rerender(<RunControls {...idleProps} canRerunFailed />);
+    expect(screen.getByRole('button', { name: 'Rerun failed' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Debug failed' })).toBeInTheDocument();
+  });
+
+  it('calls onRerunFailed when Rerun failed is clicked', async () => {
+    const user = userEvent.setup();
+    const onRerunFailed = vi.fn();
+    render(<RunControls {...idleProps} canRerunFailed onRerunFailed={onRerunFailed} />);
+
+    await user.click(screen.getByRole('button', { name: 'Rerun failed' }));
     expect(onRerunFailed).toHaveBeenCalledTimes(1);
   });
 
-  it('never shows Rerun failed while running or debugging, even if canRerunFailed is true', () => {
+  it('calls onDebugFailed when Debug failed is clicked', async () => {
+    const user = userEvent.setup();
+    const onDebugFailed = vi.fn();
+    render(<RunControls {...idleProps} canRerunFailed onDebugFailed={onDebugFailed} />);
+
+    await user.click(screen.getByRole('button', { name: 'Debug failed' }));
+    expect(onDebugFailed).toHaveBeenCalledTimes(1);
+  });
+
+  it('never shows Rerun failed / Debug failed while running or debugging, even if canRerunFailed is true', () => {
     const { rerender } = render(<RunControls {...idleProps} canRerunFailed isRunning />);
     expect(screen.queryByRole('button', { name: 'Rerun failed' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Debug failed' })).not.toBeInTheDocument();
 
     rerender(<RunControls {...idleProps} canRerunFailed isRunning isDebugRun pausedCount={1} canStep />);
     expect(screen.queryByRole('button', { name: 'Rerun failed' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Debug failed' })).not.toBeInTheDocument();
   });
 
   it('keeps Run and Debug as separate actions', async () => {

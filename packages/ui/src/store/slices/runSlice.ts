@@ -116,9 +116,15 @@ export interface RunSlice {
   /**
    * `fromLastRun`: seeds this run from the previous one (see
    * `buildFromLastRunSeed`) so nodes that already completed — and whose
-   * config hasn't changed since — are skipped instead of re-run. Mutually
-   * exclusive with `useBreakpoints` in practice (no UI path offers both
-   * together); combining them is unsupported, not actively guarded against.
+   * config hasn't changed since — are skipped instead of re-run. Composable
+   * with `useBreakpoints` — that's exactly what "Debug failed"
+   * (RunControls' caret on Debug) fires: resume past whatever already
+   * succeeded, then honor breakpoints for the rest, so a user can arm a
+   * breakpoint on the node that failed and step into it without re-running
+   * everything upstream of it first. `executeChain` (core) composes the two
+   * independently already — a `previousRun`-seeded node just starts
+   * `'completed'`, breakpoint gating is a separate check applied to
+   * whatever's left — so no engine change was needed for this.
    */
   run: (options?: { useBreakpoints?: boolean; fromLastRun?: boolean }) => Promise<void>;
 }

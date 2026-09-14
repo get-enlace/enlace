@@ -1,14 +1,21 @@
 /**
  * Header execution cluster. Segment that morphs between:
- * - idle: Run | Debug | Rerun failed (only once `canRerunFailed`)
+ * - idle: Run (+ a Rerun-failed icon once `canRerunFailed`) | Debug (+ a
+ *   Debug-failed icon once `canRerunFailed`)
  * - plain run: spinner | Stop
  * - debug: Continue | Step | Stop
  *
- * Width is a min, not a fixed value (see .run-segment in chrome.css) —
- * the idle row grows by one slot whenever Rerun failed is showable, rather
- * than reserving space for it up front (there's nothing to rerun before
- * anything's ever run, so a permanently-reserved slot would mostly sit
- * looking like a dead button).
+ * Rerun failed / Debug failed are icon-only buttons (loop icon, accessible
+ * name + hover tooltip carry the label) tucked right next to the action
+ * they're a resume-variant of — same "icon + title tooltip, no visible
+ * label" treatment Stop/Continue/Step already use below, so this isn't a
+ * new interaction pattern for the cluster. A dropdown/caret was tried first
+ * and dropped: a menu with exactly one item never earns the extra click,
+ * and it was visually heavier than just showing the action directly.
+ *
+ * Width is a min, not a fixed value (see .run-segment in chrome.css) — the
+ * segment grows by an icon's width once there's something to resume,
+ * rather than reserving space for it before anything's ever run.
  */
 export function RunControls({
   isRunning,
@@ -19,6 +26,7 @@ export function RunControls({
   onRun,
   onDebug,
   onRerunFailed,
+  onDebugFailed,
   onContinue,
   onStep,
   onStop,
@@ -33,6 +41,7 @@ export function RunControls({
   onRun: () => void;
   onDebug: () => void;
   onRerunFailed: () => void;
+  onDebugFailed: () => void;
   onContinue: () => void;
   onStep: () => void;
   onStop: () => void;
@@ -102,6 +111,17 @@ export function RunControls({
         <PlayIcon />
         <span>Run</span>
       </button>
+      {canRerunFailed && (
+        <button
+          type="button"
+          className="run-segment__btn run-segment__btn--primary run-segment__btn--icon"
+          onClick={onRerunFailed}
+          title="Rerun failed — skips nodes that already completed in the last run, retries the rest from where it stopped"
+          aria-label="Rerun failed"
+        >
+          <RetryIcon />
+        </button>
+      )}
       <button
         type="button"
         className="run-segment__btn run-segment__btn--debug"
@@ -111,17 +131,15 @@ export function RunControls({
         <BreakpointIcon />
         <span>Debug</span>
       </button>
-      {/* Own color (teal, not Debug's amber or Run's green) so it reads as
-          a third distinct action, not a variant of either — see .run-segment__btn--rerun. */}
       {canRerunFailed && (
         <button
           type="button"
-          className="run-segment__btn run-segment__btn--rerun"
-          onClick={onRerunFailed}
-          title="Rerun failed — skips nodes that already completed in the last run, retries the rest from where it stopped"
+          className="run-segment__btn run-segment__btn--debug run-segment__btn--icon"
+          onClick={onDebugFailed}
+          title="Debug failed — skips nodes that already completed in the last run, then honors breakpoints for the rest, so you can pause right before the node that failed"
+          aria-label="Debug failed"
         >
           <RetryIcon />
-          <span>Rerun failed</span>
         </button>
       )}
     </div>
