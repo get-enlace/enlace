@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Community Discussions & Questions
+    url: https://github.com/get-enlace/enlace/discussions
+    about: Ask questions, share ideas, and connect with other Enlace developers.
+  - name: 📖 Enlace Documentation
+    url: https://get-enlace.github.io/
+    about: Read guides, adapter documentation, and architectural concepts.
+  - name: 🚀 Live Demo
+    url: https://enlace-fastapi.onrender.com/enlace/
+    about: Try the interactive visual canvas demo running live on Render.

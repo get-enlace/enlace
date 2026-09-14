@@ -1,0 +1,51 @@
+name: 💡 Feature Request
+description: Suggest an idea or enhancement for Enlace.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting an enhancement to Enlace! Please describe the use case and how this helps your workflow.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Feature Area
+      description: Which area does this feature relate to?
+      options:
+        - "Visual Canvas & Node UX"
+        - "Field Mapping & Expression Resolution"
+        - "Authentication & Credentials"
+        - "Interactive Debugger"
+        - "Framework Adapters (FastAPI, Express, Nest, .NET, Spring Boot)"
+        - "New Language / Framework Adapter Request"
+        - "CLI / Headless Execution"
+        - "Documentation / Developer Experience"
+        - "Other"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: Is your feature request related to a problem? Please describe clearly.
+      placeholder: "I find it frustrating or difficult to..."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution or user experience you would like to see.
+      placeholder: "It would be great if Enlace could..."
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative solutions, workarounds, or features you've considered.
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Add any other context, mockups, or screenshots about the feature request here.
