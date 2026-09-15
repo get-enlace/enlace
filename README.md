@@ -22,7 +22,7 @@
 <br />
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/get-enlace/get-enlace.github.io/main/static/img/screenshots/canvas-chain-built.jpg" alt="Enlace Canvas Chained Execution" width="90%" style="border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.15);" />
+  <img src="https://raw.githubusercontent.com/get-enlace/get-enlace.github.io/main/static/img/screenshots/canvas-demo.gif" alt="Enlace Interactive Canvas Workflow Demo" width="90%" style="border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.15);" />
 </div>
 
 <br />
