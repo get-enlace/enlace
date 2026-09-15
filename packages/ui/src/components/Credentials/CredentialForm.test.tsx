@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { CredentialForm } from './CredentialForm.js';
 import { emptyDraft } from '../../utils/credentialDraft.js';
-import { __clearCredentialTokenCacheForTests } from '@get-enlace/core';
+import { __clearCredentialTokenCacheForTests, resolveCredentialInjection } from '@get-enlace/core';
 import type { NewCredential } from '../../types.js';
 
 function mockTokenResponse(status: number, body: unknown) {
@@ -169,6 +169,95 @@ describe('CredentialForm', () => {
       await user.type(screen.getByPlaceholderText('client secret'), '-retry');
 
       expect(screen.queryByText(/Verification failed/)).not.toBeInTheDocument();
+    });
+
+    it('fetches a fresh token when editing an existing credential and clicking "Verify & save changes"', async () => {
+      const user = userEvent.setup();
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(mockTokenResponse(200, { access_token: 'initial-token', expires_in: 3600 }))
+        .mockResolvedValueOnce(mockTokenResponse(200, { access_token: 'updated-token', expires_in: 3600 }));
+      vi.stubGlobal('fetch', fetchMock);
+
+      const existingCredential: NewCredential = {
+        name: 'clientAuth',
+        type: 'oauth2_clientCredentials',
+        tokenUrl: 'http://auth.test/token',
+        clientId: 'client-id',
+        clientSecret: 'initial-secret',
+        scope: '',
+        clientAuthMethod: 'body',
+      };
+
+      // Pre-warm the cache for 'c1'
+      const prewarm = await resolveCredentialInjection({ ...existingCredential, id: 'c1' });
+      expect(prewarm).toEqual({ headers: { Authorization: 'Bearer initial-token' } });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      const onSave = vi.fn();
+      render(<Harness initialDraft={existingCredential} editingId="c1" onSave={onSave} />);
+
+      const saveButton = screen.getByRole('button', { name: 'Verify & save changes' });
+      expect(saveButton).toBeInTheDocument();
+
+      // Edit client secret
+      const secretInput = screen.getByPlaceholderText('client secret');
+      await user.clear(secretInput);
+      await user.type(secretInput, 'updated-secret');
+
+      await user.click(saveButton);
+
+      await waitFor(() => expect(onSave).toHaveBeenCalledWith('c1'));
+      // Must have contacted auth server a second time (bypassing the old cache)
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+
+      // Verify the POST body sent the updated secret
+      const secondCallBody = new URLSearchParams(fetchMock.mock.calls[1][1].body);
+      expect(secondCallBody.get('client_secret')).toBe('updated-secret');
+
+      // Subsequent call from the engine should now receive the updated token from cache without a third fetch
+      const afterSave = await resolveCredentialInjection({
+        ...existingCredential,
+        clientSecret: 'updated-secret',
+        id: 'c1',
+      });
+      expect(afterSave).toEqual({ headers: { Authorization: 'Bearer updated-token' } });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('shows verification failure and does not call onSave when updating an existing credential with invalid credentials', async () => {
+      const user = userEvent.setup();
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(mockTokenResponse(200, { access_token: 'initial-token', expires_in: 3600 }))
+        .mockResolvedValueOnce(mockTokenResponse(401, { error: 'invalid_client' }));
+      vi.stubGlobal('fetch', fetchMock);
+
+      const existingCredential: NewCredential = {
+        name: 'clientAuth',
+        type: 'oauth2_clientCredentials',
+        tokenUrl: 'http://auth.test/token',
+        clientId: 'client-id',
+        clientSecret: 'initial-secret',
+        scope: '',
+        clientAuthMethod: 'body',
+      };
+
+      await resolveCredentialInjection({ ...existingCredential, id: 'c1' });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      const onSave = vi.fn();
+      render(<Harness initialDraft={existingCredential} editingId="c1" onSave={onSave} />);
+
+      const secretInput = screen.getByPlaceholderText('client secret');
+      await user.clear(secretInput);
+      await user.type(secretInput, 'wrong-secret');
+
+      await user.click(screen.getByRole('button', { name: 'Verify & save changes' }));
+
+      expect(await screen.findByText(/Verification failed:.*failed with status 401/)).toBeInTheDocument();
+      expect(onSave).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
     });
   });
 });

@@ -1,4 +1,5 @@
 import type { StateCreator } from 'zustand';
+import { clearCredentialTokenCache } from '@get-enlace/core';
 import { hydrateCollection } from '../../utils/workflowDocument.js';
 import type { EnlaceCollection } from '../../types.js';
 import { isLocked, type WorkflowState } from '../types.js';
@@ -14,6 +15,7 @@ export const createDocumentSlice: StateCreator<WorkflowState, [], [], DocumentSl
 
   replaceWorkflow: (collection) => {
     if (isLocked(get())) return;
+    clearCredentialTokenCache();
     const next = hydrateCollection(collection);
     const workflowName =
       collection.workflows[0]?.name?.trim() || collection.name?.trim() || 'Untitled';

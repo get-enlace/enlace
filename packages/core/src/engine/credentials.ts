@@ -116,20 +116,35 @@ async function requestOAuth2Token(
   return { accessToken: json.access_token, expiresInSeconds };
 }
 
+/** Options controlling credential resolution. */
+export interface ResolveCredentialOptions {
+  /**
+   * When true, bypasses any existing cached token and forces a fresh request
+   * to the token endpoint, refreshing the cache under this credential's id.
+   */
+  forceRefresh?: boolean;
+}
+
 /** Cache + in-flight-dedup wrapper shared by both oauth2 grants — see the module-level maps above for why. */
 async function fetchCachedOAuth2Token(
   credentialId: string,
   tokenUrl: string,
   params: Record<string, string>,
-  basicAuth?: { clientId: string; clientSecret: string }
+  basicAuth?: { clientId: string; clientSecret: string },
+  forceRefresh = false
 ): Promise<string> {
-  const cached = tokenCache.get(credentialId);
-  if (cached && cached.expiresAt > Date.now() + EXPIRY_BUFFER_MS) {
-    return cached.accessToken;
-  }
+  if (forceRefresh) {
+    tokenCache.delete(credentialId);
+    inFlightRequests.delete(credentialId);
+  } else {
+    const cached = tokenCache.get(credentialId);
+    if (cached && cached.expiresAt > Date.now() + EXPIRY_BUFFER_MS) {
+      return cached.accessToken;
+    }
 
-  const inFlight = inFlightRequests.get(credentialId);
-  if (inFlight) return inFlight;
+    const inFlight = inFlightRequests.get(credentialId);
+    if (inFlight) return inFlight;
+  }
 
   const request = (async () => {
     const { accessToken, expiresInSeconds } = await requestOAuth2Token(tokenUrl, params, basicAuth);
@@ -172,7 +187,8 @@ async function fetchCachedOAuth2Token(
  */
 export async function resolveCredentialInjection(
   credential: Credential,
-  extraTokenParamOverrides?: Record<string, string>
+  extraTokenParamOverrides?: Record<string, string>,
+  options?: ResolveCredentialOptions
 ): Promise<CredentialInjection> {
   switch (credential.type) {
     case 'bearer':
@@ -203,7 +219,7 @@ export async function resolveCredentialInjection(
       }
       const accessToken = extraTokenParamOverrides
         ? (await requestOAuth2Token(credential.tokenUrl, params, basicAuth)).accessToken
-        : await fetchCachedOAuth2Token(credential.id, credential.tokenUrl, params, basicAuth);
+        : await fetchCachedOAuth2Token(credential.id, credential.tokenUrl, params, basicAuth, options?.forceRefresh);
       return { headers: { Authorization: `Bearer ${accessToken}` } };
     }
     case 'oauth2_password': {
@@ -229,7 +245,7 @@ export async function resolveCredentialInjection(
       }
       const accessToken = extraTokenParamOverrides
         ? (await requestOAuth2Token(credential.tokenUrl, params, basicAuth)).accessToken
-        : await fetchCachedOAuth2Token(credential.id, credential.tokenUrl, params, basicAuth);
+        : await fetchCachedOAuth2Token(credential.id, credential.tokenUrl, params, basicAuth, options?.forceRefresh);
       return { headers: { Authorization: `Bearer ${accessToken}` } };
     }
     case 'cookie':
@@ -244,8 +260,18 @@ export async function resolveCredentialInjection(
   }
 }
 
+/** Invalidate cached OAuth2 token(s). Pass a credentialId to clear a specific credential, or omit to clear all. */
+export function clearCredentialTokenCache(credentialId?: string): void {
+  if (credentialId) {
+    tokenCache.delete(credentialId);
+    inFlightRequests.delete(credentialId);
+  } else {
+    tokenCache.clear();
+    inFlightRequests.clear();
+  }
+}
+
 /** Test-only: this module's caches are module-level state that otherwise leaks between test cases. */
 export function __clearCredentialTokenCacheForTests() {
-  tokenCache.clear();
-  inFlightRequests.clear();
+  clearCredentialTokenCache();
 }

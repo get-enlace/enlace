@@ -8,7 +8,7 @@ import {
   CookieFields,
 } from './CredentialTypeFields.js';
 import { CREDENTIAL_TYPE_LABELS, credentialNeedsVerification, emptyDraft, isDraftComplete } from '../../utils/credentialDraft.js';
-import { resolveCredentialInjection } from '@get-enlace/core';
+import { resolveCredentialInjection, clearCredentialTokenCache } from '@get-enlace/core';
 import { randomId } from '../../utils/randomId.js';
 import type { Credential, CredentialType, NewCredential } from '../../types.js';
 
@@ -73,6 +73,9 @@ export function CredentialForm({ draft, setDraft, editingId, onCancel, onSave }:
 
   const handleSave = async () => {
     if (!needsVerification) {
+      if (editingId) {
+        clearCredentialTokenCache(editingId);
+      }
       onSave();
       return;
     }
@@ -80,7 +83,7 @@ export function CredentialForm({ draft, setDraft, editingId, onCancel, onSave }:
     setVerifyError(null);
     try {
       const id = editingId ?? pendingIdRef.current;
-      await resolveCredentialInjection({ ...draft, id } as Credential);
+      await resolveCredentialInjection({ ...draft, id } as Credential, undefined, { forceRefresh: true });
       onSave(id);
     } catch (err) {
       setVerifyError(err instanceof Error ? err.message : String(err));

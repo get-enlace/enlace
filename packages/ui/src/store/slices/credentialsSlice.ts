@@ -1,4 +1,5 @@
 import type { StateCreator } from 'zustand';
+import { clearCredentialTokenCache } from '@get-enlace/core';
 import { randomId } from '../../utils/randomId.js';
 import type { Credential, NewCredential } from '../../types.js';
 import { type CredentialReview, type WorkflowState } from '../types.js';
@@ -22,17 +23,22 @@ export const createCredentialsSlice: StateCreator<WorkflowState, [], [], Credent
   },
 
   updateCredential: (credentialId, credential) => {
+    if (credential.type !== 'oauth2_clientCredentials' && credential.type !== 'oauth2_password') {
+      clearCredentialTokenCache(credentialId);
+    }
     const withId = { ...credential, id: credentialId } as Credential;
     set((state) => ({
       credentials: state.credentials.map((c) => (c.id === credentialId ? withId : c)),
     }));
   },
 
-  removeCredential: (credentialId) =>
+  removeCredential: (credentialId) => {
+    clearCredentialTokenCache(credentialId);
     set((state) => ({
       credentials: state.credentials.filter((c) => c.id !== credentialId),
       nodes: state.nodes.map((n) => (n.credentialId === credentialId ? { ...n, credentialId: null } : n)),
-    })),
+    }));
+  },
 
   setCredentialReview: (review) => set({ credentialReview: review }),
 });

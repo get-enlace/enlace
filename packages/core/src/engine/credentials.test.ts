@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { __clearCredentialTokenCacheForTests, resolveCredentialInjection } from './credentials.js';
+import {
+  __clearCredentialTokenCacheForTests,
+  clearCredentialTokenCache,
+  resolveCredentialInjection,
+} from './credentials.js';
 import type { Credential } from '../types.js';
 
 function mockResponse(status: number, body: unknown) {
@@ -418,5 +422,87 @@ describe('resolveCredentialInjection', () => {
       loginUrl: 'https://app.example.com/auth/github',
     };
     expect(await resolveCredentialInjection(credential)).toEqual({ credentials: 'include' });
+  });
+
+  it('bypasses the token cache and fetches a fresh token when forceRefresh is true, updating the cache', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(mockResponse(200, { access_token: 'initial-token', expires_in: 3600 }))
+      .mockResolvedValueOnce(mockResponse(200, { access_token: 'refreshed-token', expires_in: 3600 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const credential: Credential = {
+      id: 'c1',
+      name: 'Test',
+      type: 'oauth2_clientCredentials',
+      tokenUrl: 'http://auth.test/token',
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      clientAuthMethod: 'body',
+    };
+
+    // 1. Initial fetch: populates cache with 'initial-token'
+    const first = await resolveCredentialInjection(credential);
+    expect(first).toEqual({ headers: { Authorization: 'Bearer initial-token' } });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // 2. forceRefresh: true bypasses cache, calls fetch, caches 'refreshed-token'
+    const second = await resolveCredentialInjection(credential, undefined, { forceRefresh: true });
+    expect(second).toEqual({ headers: { Authorization: 'Bearer refreshed-token' } });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    // 3. Normal subsequent call: serves 'refreshed-token' from cache without fetching
+    const third = await resolveCredentialInjection(credential);
+    expect(third).toEqual({ headers: { Authorization: 'Bearer refreshed-token' } });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('clearCredentialTokenCache invalidates a specific credential or all credentials', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(mockResponse(200, { access_token: 'token', expires_in: 3600 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const c1: Credential = {
+      id: 'c1',
+      name: 'Test 1',
+      type: 'oauth2_clientCredentials',
+      tokenUrl: 'http://auth.test/token',
+      clientId: 'id-1',
+      clientSecret: 'sec-1',
+      clientAuthMethod: 'body',
+    };
+    const c2: Credential = {
+      id: 'c2',
+      name: 'Test 2',
+      type: 'oauth2_clientCredentials',
+      tokenUrl: 'http://auth.test/token',
+      clientId: 'id-2',
+      clientSecret: 'sec-2',
+      clientAuthMethod: 'body',
+    };
+
+    await resolveCredentialInjection(c1);
+    await resolveCredentialInjection(c2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    // Invalidate only c1
+    clearCredentialTokenCache('c1');
+
+    // c2 should still hit cache
+    await resolveCredentialInjection(c2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    // c1 should refetch
+    await resolveCredentialInjection(c1);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    // Clear all
+    clearCredentialTokenCache();
+
+    // Both should refetch
+    await resolveCredentialInjection(c1);
+    await resolveCredentialInjection(c2);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
   });
 });
