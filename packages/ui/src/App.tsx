@@ -124,6 +124,7 @@ export default function App() {
             pausedCount={pausedNodeIds.length}
             canStep={!!stepTarget}
             canRerunFailed={canRerunFailed}
+            canRun={nodes.length > 0}
             onRun={() => run()}
             onDebug={() => run({ useBreakpoints: true })}
             onRerunFailed={() => run({ fromLastRun: true })}
@@ -149,7 +150,7 @@ export default function App() {
         }
       >
         <OperationList ref={operationListRef} operations={operations} />
-        <Canvas />
+        <Canvas onAddFirstOperation={() => operationListRef.current?.focusSearch()} />
         {showNodeConfig ? (
           <NodeConfigShell onCollapse={() => setShowNodeConfig(false)} onWidthChange={onNodeConfigWidthChange}>
             <NodeConfig />

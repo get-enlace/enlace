@@ -969,3 +969,103 @@
   font-weight: 600;
 }
 
+
+/* --- Empty-canvas hero (shown only while the workflow has 0 nodes) --- */
+
+.canvas-hero {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none; /* canvas stays droppable/clickable beneath */
+}
+
+.canvas-hero__card {
+  max-width: 640px;
+  padding: 24px;
+  text-align: center;
+  pointer-events: auto;
+}
+
+.canvas-hero__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-panel-bg);
+}
+
+.canvas-hero__mark img {
+  width: 28px;
+  height: 28px;
+}
+
+.canvas-hero h2 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  color: var(--color-text);
+}
+
+.canvas-hero__lead {
+  margin: 0 auto 18px;
+  max-width: 420px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.canvas-hero__steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+}
+
+.canvas-hero__step {
+  padding: 12px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-panel-bg);
+  text-align: center;
+}
+
+.canvas-hero__step-title {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.canvas-hero__step-desc {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.canvas-hero__cta {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  background: var(--color-post);
+  color: #1b1b1b;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.canvas-hero__cta:hover {
+  filter: brightness(1.08);
+}
+
+.canvas-hero__hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}

@@ -23,6 +23,7 @@ export function RunControls({
   pausedCount,
   canStep,
   canRerunFailed,
+  canRun = true,
   onRun,
   onDebug,
   onRerunFailed,
@@ -38,6 +39,8 @@ export function RunControls({
   canStep: boolean;
   /** Whether the last run left something unfinished — see store/slices/runSlice.ts's `hasResumableFailure`. */
   canRerunFailed: boolean;
+  /** False while the workflow is empty — Run/Debug are disabled with an explanatory tooltip. */
+  canRun?: boolean;
   onRun: () => void;
   onDebug: () => void;
   onRerunFailed: () => void;
@@ -107,7 +110,13 @@ export function RunControls({
     <div className="run-segment" role="group" aria-label="Run controls">
       {/* Run vs Debug stay two distinct actions — same shell, different
           semantics (plain run ignores breakpoints; Debug honors them). */}
-      <button type="button" className="run-segment__btn run-segment__btn--primary" onClick={onRun}>
+      <button
+        type="button"
+        className="run-segment__btn run-segment__btn--primary"
+        onClick={onRun}
+        disabled={!canRun}
+        title={canRun ? undefined : 'Add an operation to run'}
+      >
         <PlayIcon />
         <span>Run</span>
       </button>
@@ -126,7 +135,8 @@ export function RunControls({
         type="button"
         className="run-segment__btn run-segment__btn--debug"
         onClick={onDebug}
-        title="Run, honoring any breakpoints armed on the canvas"
+        disabled={!canRun}
+        title={canRun ? 'Run, honoring any breakpoints armed on the canvas' : 'Add an operation to run'}
       >
         <BreakpointIcon />
         <span>Debug</span>

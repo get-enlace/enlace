@@ -169,59 +169,114 @@
   min-width: 0;
 }
 
-/* --- Preset palette: an icon-grid "library" for non-HTTP nodes (Wait,
-   Assert), not a list of rows like Operations below — same drag mechanism
-   as an operation row (see OperationList.tsx). Bare colored icons, no
-   card/box chrome around them — each icon's own accent (--color-wait,
-   --color-presets, ...) is the only thing that has to carry its identity
-   here. Each icon's name is a hover tooltip + aria-label, not visible text
-   (see OperationList.tsx's own comment on why). --- */
+/* --- Dock tabs (Operations | Presets) + preset rows --- */
 
-.preset-list {
-  margin: 0 0 14px;
-  padding-bottom: 14px;
+.dock-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 10px;
   border-bottom: 1px solid var(--color-border);
 }
 
-/* Fixed 5 columns (not auto-fill) — a library grid reads better at a
-   consistent cell size than one that keeps stretching as the sidebar
-   resizes. Capped at ~3 rows' worth of height and scrolls beyond that
-   (`overflow-y: auto`) rather than growing the sidebar indefinitely as
-   more presets land — revisit the 128px figure if the cell size or gap
-   above ever changes, it isn't derived from them. */
-.preset-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
+.dock-tabs__tab {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
-  max-height: 128px;
-  overflow-y: auto;
+  padding: 6px 8px;
+  margin-bottom: -1px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
-.preset-grid__item {
+.dock-tabs__tab:hover {
+  color: var(--color-text);
+}
+
+.dock-tabs__tab--active {
+  color: var(--color-text);
+  border-bottom-color: var(--color-post);
+}
+
+.dock-tabs__count {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--color-node-bg);
+  color: var(--color-text-muted);
+}
+
+.dock-tabs__hint {
+  display: block;
+  margin: 0 0 8px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.dock-tabs__hint:hover {
+  color: var(--color-text);
+  text-decoration: underline;
+}
+
+.preset-rows__item {
   display: flex;
   align-items: center;
-  justify-content: center;
-  aspect-ratio: 1;
-  border: none;
-  background: none;
+  gap: 10px;
+  padding: 8px;
+  margin-bottom: 6px;
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   cursor: grab;
 }
 
-.preset-grid__item:hover {
+.preset-rows__item:hover {
   background: var(--color-node-bg);
 }
 
-.preset-grid__icon {
-  font-size: 18px;
+.preset-rows__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  font-size: 16px;
   line-height: 1;
+  flex: none;
 }
 
-.preset-grid__icon--wait {
+.preset-rows__icon--wait {
   color: var(--color-wait);
+  background: var(--color-wait-bg);
 }
 
-.preset-grid__icon--assert {
+.preset-rows__icon--assert {
   color: var(--color-presets);
+  background: var(--color-presets-bg);
 }
 
+.preset-rows__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.preset-rows__name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.preset-rows__desc {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}

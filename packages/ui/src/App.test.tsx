@@ -52,7 +52,10 @@ describe('App', () => {
   it('Run and Debug are two separate buttons — Run ignores breakpoints, Debug honors them', async () => {
     const user = userEvent.setup();
     const run = vi.fn();
-    useWorkflowStore.setState({ run });
+    useWorkflowStore.setState({
+      run,
+      nodes: [{ id: 'a', kind: 'operation', operationId: 'a', credentialId: null }],
+    });
     render(<App />);
 
     await user.click(screen.getByRole('button', { name: 'Run' }));
@@ -60,6 +63,26 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Debug' }));
     expect(run).toHaveBeenLastCalledWith({ useBreakpoints: true });
+  });
+
+  it('disables Run and Debug, and shows the empty-canvas hero, while the workflow has no nodes', () => {
+    render(<App />);
+    expect(screen.getByRole('button', { name: 'Run' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Debug' })).toBeDisabled();
+    expect(screen.getByTestId('canvas-hero')).toBeInTheDocument();
+  });
+
+  it('hides the empty-canvas hero once a node exists', () => {
+    useWorkflowStore.setState({ nodes: [{ id: 'a', kind: 'operation', operationId: 'a', credentialId: null }] });
+    render(<App />);
+    expect(screen.queryByTestId('canvas-hero')).not.toBeInTheDocument();
+  });
+
+  it('the hero CTA focuses the operation search', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: /Add your first operation/ }));
+    expect(screen.getByLabelText('Search operations and presets')).toHaveFocus();
   });
 
   it('also hides Debug while a plain run is in progress', () => {

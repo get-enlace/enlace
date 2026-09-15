@@ -59,23 +59,46 @@ describe('OperationList', () => {
     expect(dataTransfer.setData).toHaveBeenCalledWith('text/operation-id', 'POST /pet');
   });
 
-  it('renders a Wait preset icon (labeled via hover tooltip/aria-label, not visible text) that sets a distinct preset-kind drag payload', () => {
+  it('shows presets only on the Presets tab, as named rows with a description', async () => {
+    const user = userEvent.setup();
+    render(<OperationList operations={[makeOperation({ operationId: 'addPet' })]} />);
+
+    expect(screen.queryByText('Wait')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: /Presets/ }));
+
+    expect(screen.getByText('Wait')).toBeInTheDocument();
+    expect(screen.getByText('Pause for a set time')).toBeInTheDocument();
+    expect(screen.queryByText('addPet')).not.toBeInTheDocument();
+  });
+
+  it('Operations is the default tab, and arrow keys switch tabs', async () => {
+    const user = userEvent.setup();
     render(<OperationList operations={[]} />);
 
-    expect(screen.getByText('Presets')).toBeInTheDocument();
-    const item = screen.getByLabelText('Wait');
-    expect(item).toHaveAttribute('title', 'Wait');
+    expect(screen.getByRole('tab', { name: /Operations/ })).toHaveAttribute('aria-selected', 'true');
+    screen.getByRole('tab', { name: /Operations/ }).focus();
+    await user.keyboard('{ArrowRight}');
+    expect(screen.getByRole('tab', { name: /Presets/ })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('a Wait preset row sets a distinct preset-kind drag payload', async () => {
+    const user = userEvent.setup();
+    render(<OperationList operations={[]} />);
+    await user.click(screen.getByRole('tab', { name: /Presets/ }));
+
+    const item = screen.getByText('Wait').closest('li')!;
     const dataTransfer = { setData: vi.fn() };
     fireEvent.dragStart(item, { dataTransfer });
 
     expect(dataTransfer.setData).toHaveBeenCalledWith('text/preset-kind', 'wait');
   });
 
-  it('renders an Assert preset icon that sets a distinct preset-kind drag payload', () => {
+  it('an Assert preset row sets a distinct preset-kind drag payload', async () => {
+    const user = userEvent.setup();
     render(<OperationList operations={[]} />);
+    await user.click(screen.getByRole('tab', { name: /Presets/ }));
 
-    const item = screen.getByLabelText('Assert');
-    expect(item).toHaveAttribute('title', 'Assert');
+    const item = screen.getByText('Assert').closest('li')!;
     const dataTransfer = { setData: vi.fn() };
     fireEvent.dragStart(item, { dataTransfer });
 
@@ -106,9 +129,8 @@ describe('OperationList', () => {
       expect(screen.getAllByRole('listitem')).toHaveLength(2);
       expect(screen.getByText('addPet')).toBeInTheDocument();
       expect(screen.getByText('getPetById')).toBeInTheDocument();
-      // Neither preset name contains "pet" — the Presets section just
-      // doesn't render, same as an unmatched Operations tag group.
-      expect(screen.queryByText('Presets')).not.toBeInTheDocument();
+      // Neither preset name contains "pet" — no cross-tab hint either.
+      expect(screen.queryByText(/in Presets/)).not.toBeInTheDocument();
     });
 
     it('narrows further on a more specific query', () => {
@@ -122,7 +144,7 @@ describe('OperationList', () => {
       expect(screen.getByText('addPet')).toBeInTheDocument();
     });
 
-    it('shows an empty-state message naming both operations and presets, not an empty list, when nothing matches either', () => {
+    it('shows an operations empty-state message when nothing matches', () => {
       render(<OperationList operations={operations} />);
 
       fireEvent.change(screen.getByLabelText('Search operations and presets'), {
@@ -130,10 +152,10 @@ describe('OperationList', () => {
       });
 
       expect(screen.queryAllByRole('listitem')).toHaveLength(0);
-      expect(screen.getByText('No operations or presets match "nonexistent".')).toBeInTheDocument();
+      expect(screen.getByText('No operations match "nonexistent".')).toBeInTheDocument();
     });
 
-    it('also matches on /path prefix search, and hides Presets entirely (path search is operations-only)', () => {
+    it('also matches on /path prefix search (operations-only, no cross-tab hint)', () => {
       const mixedOps = [
         makeOperation({ id: 'GET /pets', path: '/pets', operationId: 'listPets' }),
         makeOperation({ id: 'POST /orders', path: '/orders', operationId: 'createOrder' }),
@@ -146,7 +168,7 @@ describe('OperationList', () => {
 
       expect(screen.getAllByRole('listitem')).toHaveLength(1);
       expect(screen.getByText('createOrder')).toBeInTheDocument();
-      expect(screen.queryByText('Presets')).not.toBeInTheDocument();
+      expect(screen.queryByText(/in Presets/)).not.toBeInTheDocument();
     });
 
     it('a /path search with no operation match shows the operations-only empty message, not the combined one', () => {
@@ -159,45 +181,32 @@ describe('OperationList', () => {
       expect(screen.getByText('No operations match "/nonexistent".')).toBeInTheDocument();
     });
 
-    it('a plain-text search also matches preset names, alongside operationIds', () => {
+    it('a plain-text search that only matches a preset name points at the Presets tab, and clicking it switches', async () => {
+      const user = userEvent.setup();
       render(<OperationList operations={operations} />);
 
       fireEvent.change(screen.getByLabelText('Search operations and presets'), {
         target: { value: 'wait' },
       });
 
-      // No operationId in this fixture contains "wait" — Operations comes up empty...
       expect(screen.queryAllByRole('listitem')).toHaveLength(0);
-      expect(screen.queryByText('No operations or presets match "wait".')).not.toBeInTheDocument();
-      // ...but the Presets grid still shows its one match, narrowed to just Wait.
-      expect(screen.getByLabelText('Wait')).toBeInTheDocument();
-      expect(screen.queryByLabelText('Assert')).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: '1 match in Presets →' }));
+
+      expect(screen.getByText('Wait')).toBeInTheDocument();
+      expect(screen.queryByText('Assert')).not.toBeInTheDocument();
     });
 
-    it('the . trigger searches presets only, excluding operations even when their operationId would also match', () => {
-      const opsWithWaitId = [...operations, makeOperation({ id: 'POST /wait', operationId: 'waitForIt' })];
-      render(<OperationList operations={opsWithWaitId} />);
-
-      fireEvent.change(screen.getByLabelText('Search operations and presets'), {
-        target: { value: '.wait' },
-      });
-
-      expect(screen.getByLabelText('Wait')).toBeInTheDocument();
-      expect(screen.queryByLabelText('Assert')).not.toBeInTheDocument();
-      // "waitForIt" would match a plain "wait" search, but not a preset-only one.
-      expect(screen.queryAllByRole('listitem')).toHaveLength(0);
-      expect(screen.queryByText('Operations')).toBeInTheDocument(); // heading itself always stays
-    });
-
-    it('. with no preset match shows the presets-only empty message', () => {
+    it('on the Presets tab, search filters preset names and shows a presets empty message', async () => {
+      const user = userEvent.setup();
       render(<OperationList operations={operations} />);
+      await user.click(screen.getByRole('tab', { name: /Presets/ }));
 
-      fireEvent.change(screen.getByLabelText('Search operations and presets'), {
-        target: { value: '.nonexistent' },
-      });
+      fireEvent.change(screen.getByLabelText('Search operations and presets'), { target: { value: 'ass' } });
+      expect(screen.getByText('Assert')).toBeInTheDocument();
+      expect(screen.queryByText('Wait')).not.toBeInTheDocument();
 
-      expect(screen.getByText('No presets match ".nonexistent".')).toBeInTheDocument();
-      expect(screen.queryByText('Presets')).not.toBeInTheDocument();
+      fireEvent.change(screen.getByLabelText('Search operations and presets'), { target: { value: 'zzz' } });
+      expect(screen.getByText('No presets match "zzz".')).toBeInTheDocument();
     });
   });
 
@@ -217,37 +226,35 @@ describe('OperationList', () => {
       expect(screen.getByRole('button', { name: /untagged/i })).toBeInTheDocument();
     });
 
-    it('all groups start collapsed, hiding their operations', () => {
+    it('all groups start expanded, showing their operations', () => {
       render(<OperationList operations={taggedOps} />);
 
-      expect(screen.queryByText('listPets')).not.toBeInTheDocument();
-      expect(screen.queryByText('addPet')).not.toBeInTheDocument();
-      expect(screen.queryByText('listOrders')).not.toBeInTheDocument();
-      expect(screen.queryByText('deleteMisc')).not.toBeInTheDocument();
-      // Headers are still present so the user can expand.
-      expect(screen.getByRole('button', { name: /pets/i })).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.getByText('listPets')).toBeInTheDocument();
+      expect(screen.getByText('addPet')).toBeInTheDocument();
+      expect(screen.getByText('listOrders')).toBeInTheDocument();
+      expect(screen.getByText('deleteMisc')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /pets/i })).toHaveAttribute('aria-expanded', 'true');
     });
 
-    it('clicking a group header expands it, showing its operations', async () => {
+    it('clicking a group header collapses it, hiding only its operations', async () => {
       const user = userEvent.setup();
       render(<OperationList operations={taggedOps} />);
 
       await user.click(screen.getByRole('button', { name: /pets/i }));
 
-      expect(screen.getByText('listPets')).toBeInTheDocument();
-      expect(screen.getByText('addPet')).toBeInTheDocument();
-      // other groups stay collapsed
-      expect(screen.queryByText('listOrders')).not.toBeInTheDocument();
+      expect(screen.queryByText('listPets')).not.toBeInTheDocument();
+      expect(screen.queryByText('addPet')).not.toBeInTheDocument();
+      expect(screen.getByText('listOrders')).toBeInTheDocument();
     });
 
-    it('clicking an expanded group collapses it again', async () => {
+    it('clicking a collapsed group expands it again', async () => {
       const user = userEvent.setup();
       render(<OperationList operations={taggedOps} />);
 
       const btn = screen.getByRole('button', { name: /pets/i });
-      await user.click(btn); // expand
       await user.click(btn); // collapse
-      expect(screen.queryByText('listPets')).not.toBeInTheDocument();
+      await user.click(btn); // expand
+      expect(screen.getByText('listPets')).toBeInTheDocument();
     });
 
     it('search expands matching groups and hides empty ones', () => {
@@ -261,7 +268,7 @@ describe('OperationList', () => {
       expect(screen.queryByRole('button', { name: /pets/i })).not.toBeInTheDocument();
     });
 
-    it('clearing the search returns groups to collapsed', () => {
+    it('clearing the search returns groups to their default (expanded) state', () => {
       render(<OperationList operations={taggedOps} />);
 
       const input = screen.getByLabelText('Search operations and presets');
@@ -269,26 +276,26 @@ describe('OperationList', () => {
       expect(screen.getByText('listOrders')).toBeInTheDocument();
 
       fireEvent.change(input, { target: { value: '' } });
-      expect(screen.queryByText('listOrders')).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /orders/i })).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.getByRole('button', { name: /orders/i })).toHaveAttribute('aria-expanded', 'true');
+      expect(screen.getByText('listPets')).toBeInTheDocument();
     });
 
-    it('Expand all / Collapse all toggles every group', async () => {
+    it('Collapse all / Expand all toggles every group', async () => {
       const user = userEvent.setup();
       render(<OperationList operations={taggedOps} />);
 
-      expect(screen.getByRole('button', { name: 'Expand all' })).toBeInTheDocument();
-      expect(screen.queryByText('listPets')).not.toBeInTheDocument();
-
-      await user.click(screen.getByRole('button', { name: 'Expand all' }));
-      expect(screen.getByText('listPets')).toBeInTheDocument();
-      expect(screen.getByText('listOrders')).toBeInTheDocument();
-      expect(screen.getByText('deleteMisc')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Collapse all' })).toBeInTheDocument();
+      expect(screen.getByText('listPets')).toBeInTheDocument();
 
       await user.click(screen.getByRole('button', { name: 'Collapse all' }));
       expect(screen.queryByText('listPets')).not.toBeInTheDocument();
+      expect(screen.queryByText('listOrders')).not.toBeInTheDocument();
+      expect(screen.queryByText('deleteMisc')).not.toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Expand all' })).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Expand all' }));
+      expect(screen.getByText('listPets')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Collapse all' })).toBeInTheDocument();
     });
 
     it('hides the expand/collapse toggle while searching', () => {

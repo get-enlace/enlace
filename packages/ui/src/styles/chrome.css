@@ -404,3 +404,14 @@
 }
 
 
+
+.run-segment__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* The Enlace mark ships as a white SVG (favicon.svg) — darken it on the light theme. */
+:root[data-theme='light'] .app__logo,
+:root[data-theme='light'] .canvas-hero__mark img {
+  filter: brightness(0.1);
+}

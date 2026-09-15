@@ -12,15 +12,12 @@ export interface OperationListHandle {
 
 const UNTAGGED = '(untagged)';
 
-// No-shift character (unlike '@'/'#'/'!') — and neither a path (always
-// starts with '/') nor an operationId can plausibly start with '.', so it
-// never collides with a real match in either other mode.
-const PRESET_SEARCH_TRIGGER = '.';
+type DockTab = 'operations' | 'presets';
 
-/** Every preset the palette grid can drag — same two kinds PresetsNodeCard.tsx/graphSlice.ts know about, named here for search matching. */
-const PRESET_DEFS: Array<{ kind: 'wait' | 'assert'; label: string; icon: string }> = [
-  { kind: 'wait', label: 'Wait', icon: '⏱' },
-  { kind: 'assert', label: 'Assert', icon: '✓' },
+/** Every preset the Presets tab can drag — same two kinds PresetsNodeCard.tsx/graphSlice.ts know about. */
+const PRESET_DEFS: Array<{ kind: 'wait' | 'assert'; label: string; description: string; icon: string }> = [
+  { kind: 'wait', label: 'Wait', description: 'Pause for a set time', icon: '⏱' },
+  { kind: 'assert', label: 'Assert', description: 'Check a response value', icon: '✓' },
 ];
 
 function groupOperations(ops: Operation[]): Array<{ tag: string; operations: Operation[] }> {
@@ -48,55 +45,49 @@ export const OperationList = forwardRef<OperationListHandle, Props>(function Ope
   useImperativeHandle(ref, () => ({ focusSearch: () => searchInputRef.current?.focus() }));
 
   const [query, setQuery] = useState('');
-  // Empty = all collapsed. Search temporarily expands every visible
-  // (already-filtered) group; clearing the query returns to this set.
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [tab, setTab] = useState<DockTab>('operations');
+  // Groups start expanded (a first-time user should see operations without
+  // an extra click); this tracks the ones the user has explicitly collapsed.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   const trimmedQuery = query.trim().toLowerCase();
   const searching = trimmedQuery.length > 0;
-  // Three search modes, one search box: a leading '/' searches operation
-  // paths only (unchanged from before presets joined this search); a
-  // leading PRESET_SEARCH_TRIGGER searches preset names only; anything
-  // else is a combined operationId + preset-name search, so plain typing
-  // finds either kind without needing a prefix. Each trigger is exclusive
-  // of the other results — a path search shows no presets, a preset
-  // search shows no operations — same reasoning the original path/operationId
-  // split already had: keep the modes distinct so an accidental match in
-  // the "wrong" field doesn't pollute results.
+  // Search is scoped to the active tab. On Operations a leading '/'
+  // searches paths only, anything else matches operationId. On Presets it
+  // matches the preset name.
   const isPathSearch = trimmedQuery.startsWith('/');
-  const isPresetSearch = !isPathSearch && trimmedQuery.startsWith(PRESET_SEARCH_TRIGGER);
-  const presetMatchText = isPresetSearch ? trimmedQuery.slice(PRESET_SEARCH_TRIGGER.length) : trimmedQuery;
 
-  const filtered = !searching
+  const matchingOperations = !searching
     ? operations
-    : isPresetSearch
-      ? []
-      : operations.filter((op) =>
-          isPathSearch ? op.path.toLowerCase().includes(trimmedQuery) : op.operationId?.toLowerCase().includes(trimmedQuery)
-        );
-
-  const filteredPresets = !searching
+    : operations.filter((op) =>
+        isPathSearch ? op.path.toLowerCase().includes(trimmedQuery) : op.operationId?.toLowerCase().includes(trimmedQuery)
+      );
+  const matchingPresets = !searching
     ? PRESET_DEFS
     : isPathSearch
       ? []
-      : PRESET_DEFS.filter((p) => p.label.toLowerCase().includes(presetMatchText));
+      : PRESET_DEFS.filter((p) => p.label.toLowerCase().includes(trimmedQuery));
 
-  // Only reached when both are empty (see the render below) — worded per
-  // mode so a preset-only search never says "No operations match", etc.
-  const emptyMessage = isPathSearch
-    ? `No operations match "${query}".`
-    : isPresetSearch
+  const filtered = matchingOperations;
+  const filteredPresets = matchingPresets;
+  // Muted pointer to the *other* tab when it has hits the active one doesn't show.
+  const otherTabMatches = searching ? (tab === 'operations' ? filteredPresets.length : filtered.length) : 0;
+
+  const emptyMessage =
+    tab === 'presets'
       ? `No presets match "${query}".`
-      : `No operations or presets match "${query}".`;
+      : isPathSearch
+        ? `No operations match "${query}".`
+        : `No operations match "${query}".`;
 
   const groups = groupOperations(filtered);
   const multipleGroups = groups.length > 1 || (groups.length === 1 && groups[0].tag !== UNTAGGED);
 
   const allTags = groups.map((g) => g.tag);
-  const allExpanded = allTags.length > 0 && allTags.every((tag) => expanded.has(tag));
+  const allExpanded = allTags.length > 0 && allTags.every((tag) => !collapsed.has(tag));
 
   const toggleGroup = (tag: string) => {
-    setExpanded((prev) => {
+    setCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(tag)) next.delete(tag);
       else next.add(tag);
@@ -105,7 +96,7 @@ export const OperationList = forwardRef<OperationListHandle, Props>(function Ope
   };
 
   const toggleAll = () => {
-    setExpanded(allExpanded ? new Set() : new Set(allTags));
+    setCollapsed(allExpanded ? new Set(allTags) : new Set());
   };
 
   const renderItem = (op: Operation) => (
@@ -128,59 +119,88 @@ export const OperationList = forwardRef<OperationListHandle, Props>(function Ope
         <input
           ref={searchInputRef}
           type="text"
-          placeholder="Search by operationId or preset, /path…, .preset…"
+          placeholder={tab === 'presets' ? 'Search presets…' : 'Search operations…'}
           aria-label="Search operations and presets"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
-      {/* Icon-grid "library" — not the Operations list's row-per-item shape
-          below: a small, fixed set of presets, meant to scan at a glance
-          rather than read. Each cell's name is a hover tooltip (`title`) +
-          `aria-label`, not visible text. Only real presets live here —
-          there's no "collection" item to drag; dropping any preset onto the
-          canvas always creates/uses a `kind: 'presets'` collection, even for
-          just this one (see Canvas.tsx's onDrop). Hidden entirely (not just
-          emptied) once a search excludes every preset — same "a group with
-          no matches just doesn't render" behavior Operations' own tag
-          groups already have below, rather than showing an empty header. */}
-      {filteredPresets.length > 0 && (
-        <section className="preset-list">
-          <h2>Presets</h2>
-          <div className="preset-grid">
+      <div className="dock-tabs" role="tablist" aria-label="Palette">
+        {(['operations', 'presets'] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            id={`dock-tab-${t}`}
+            aria-selected={tab === t}
+            aria-controls="dock-panel"
+            tabIndex={tab === t ? 0 : -1}
+            className={`dock-tabs__tab${tab === t ? ' dock-tabs__tab--active' : ''}`}
+            onClick={() => setTab(t)}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                e.preventDefault();
+                const next: DockTab = t === 'operations' ? 'presets' : 'operations';
+                setTab(next);
+                document.getElementById(`dock-tab-${next}`)?.focus();
+              }
+            }}
+          >
+            {t === 'operations' ? 'Operations' : 'Presets'}
+            <span className="dock-tabs__count">{t === 'operations' ? operations.length : PRESET_DEFS.length}</span>
+          </button>
+        ))}
+      </div>
+      {otherTabMatches > 0 && (
+        <button
+          type="button"
+          className="dock-tabs__hint"
+          onClick={() => setTab(tab === 'operations' ? 'presets' : 'operations')}
+        >
+          {otherTabMatches} {otherTabMatches === 1 ? 'match' : 'matches'} in {tab === 'operations' ? 'Presets' : 'Operations'} →
+        </button>
+      )}
+      <div id="dock-panel" role="tabpanel" aria-labelledby={`dock-tab-${tab}`}>
+      {tab === 'presets' ? (
+        filteredPresets.length === 0 ? (
+          <p className="operation-list__empty">{emptyMessage}</p>
+        ) : (
+          <ul className="preset-rows">
             {filteredPresets.map((preset) => (
-              <div
+              <li
                 key={preset.kind}
-                className="preset-grid__item"
+                className="preset-rows__item"
                 draggable
                 onDragStart={(e) => e.dataTransfer.setData('text/preset-kind', preset.kind)}
-                title={preset.label}
-                aria-label={preset.label}
               >
-                <span className={`preset-grid__icon preset-grid__icon--${preset.kind}`} aria-hidden="true">
+                <span className={`preset-rows__icon preset-rows__icon--${preset.kind}`} aria-hidden="true">
                   {preset.icon}
                 </span>
-              </div>
+                <span className="preset-rows__text">
+                  <span className="preset-rows__name">{preset.label}</span>
+                  <span className="preset-rows__desc">{preset.description}</span>
+                </span>
+              </li>
             ))}
-          </div>
-        </section>
-      )}
-      <div className="operation-list__heading">
-        <h2>Operations</h2>
-        {multipleGroups && !searching && (
+          </ul>
+        )
+      ) : (
+        <>
+      {multipleGroups && !searching && (
+        <div className="operation-list__heading">
           <button type="button" className="operation-list__toggle-all" onClick={toggleAll}>
             {allExpanded ? 'Collapse all' : 'Expand all'}
           </button>
-        )}
-      </div>
-      {searching && filtered.length === 0 && filteredPresets.length === 0 ? (
+        </div>
+      )}
+      {searching && filtered.length === 0 ? (
         <p className="operation-list__empty">{emptyMessage}</p>
       ) : filtered.length === 0 ? null : multipleGroups ? (
         <div className="operation-list__groups">
           {groups.map(({ tag, operations: groupOps }) => {
             // While searching, every remaining group has a match — expand them
             // so the hits are visible without an extra click.
-            const isExpanded = searching || expanded.has(tag);
+            const isExpanded = searching || !collapsed.has(tag);
             return (
               <div key={tag} className="operation-list__group">
                 <button
@@ -201,6 +221,9 @@ export const OperationList = forwardRef<OperationListHandle, Props>(function Ope
       ) : (
         <ul>{filtered.map(renderItem)}</ul>
       )}
+        </>
+      )}
+      </div>
     </aside>
   );
 });

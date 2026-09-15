@@ -25,6 +25,7 @@ import {
 } from '../../utils/groupGeometry.js';
 import { BreakpointConnectionEdge } from './BreakpointConnectionEdge.js';
 import { GroupConfirmModal } from './GroupConfirmModal.js';
+import { EmptyCanvasHero } from './EmptyCanvasHero.js';
 import { GroupNodeCard } from './GroupNodeCard.js';
 import { WorkflowNodeCard } from './WorkflowNodeCard.js';
 import { PresetsNodeCard } from './PresetsNodeCard.js';
@@ -34,15 +35,15 @@ import { pendingFromDropTarget, suggestGroupName, type PendingGroup } from './pe
 const nodeTypes = { workflowNode: WorkflowNodeCard, nodeGroup: GroupNodeCard, presetsNode: PresetsNodeCard };
 const edgeTypes = { connection: BreakpointConnectionEdge };
 
-export function Canvas() {
+export function Canvas({ onAddFirstOperation }: { onAddFirstOperation?: () => void } = {}) {
   return (
     <ReactFlowProvider>
-      <CanvasInner />
+      <CanvasInner onAddFirstOperation={onAddFirstOperation} />
     </ReactFlowProvider>
   );
 }
 
-function CanvasInner() {
+function CanvasInner({ onAddFirstOperation }: { onAddFirstOperation?: () => void }) {
   const {
     nodes,
     nodePositions,
@@ -389,6 +390,8 @@ function CanvasInner() {
         <Background color="#3a3d42" gap={16} />
         <Controls />
       </ReactFlow>
+
+      {nodes.length === 0 && <EmptyCanvasHero onAddFirstOperation={onAddFirstOperation} />}
 
       {pendingGroup && (
         <GroupConfirmModal
