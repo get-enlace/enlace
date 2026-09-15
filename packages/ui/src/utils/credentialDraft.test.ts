@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { CREDENTIAL_TYPE_LABELS, emptyDraft, isDraftComplete, maskedPreview, toDraft } from './credentialDraft.js';
+import {
+  CREDENTIAL_TYPE_LABELS,
+  cloneDraft,
+  emptyDraft,
+  isDraftComplete,
+  maskedPreview,
+  toDraft,
+} from './credentialDraft.js';
 import type { Credential } from '../types.js';
 
 describe('emptyDraft', () => {
@@ -236,6 +243,61 @@ describe('toDraft', () => {
   it('strips the id, keeping every other field', () => {
     const credential: Credential = { id: 'c1', name: 'staging', type: 'bearer', token: 'secret' };
     expect(toDraft(credential)).toEqual({ name: 'staging', type: 'bearer', token: 'secret' });
+  });
+});
+
+describe('cloneDraft', () => {
+  it('strips id and fromSecurityScheme, defaults name to ${name} (copy)', () => {
+    const credential: Credential = {
+      id: 'c1',
+      name: 'staging',
+      type: 'bearer',
+      token: 'secret',
+      fromSecurityScheme: 'bearerAuth',
+    };
+    expect(cloneDraft(credential)).toEqual({
+      name: 'staging (copy)',
+      type: 'bearer',
+      token: 'secret',
+    });
+  });
+
+  it('increments copy suffix if collision exists in existingNames', () => {
+    const credential: Credential = { id: 'c1', name: 'staging', type: 'bearer', token: 'secret' };
+    expect(cloneDraft(credential, ['staging', 'staging (copy)'])).toEqual({
+      name: 'staging (copy 2)',
+      type: 'bearer',
+      token: 'secret',
+    });
+    expect(cloneDraft(credential, ['staging', 'staging (copy)', 'staging (copy 2)'])).toEqual({
+      name: 'staging (copy 3)',
+      type: 'bearer',
+      token: 'secret',
+    });
+  });
+
+  it('preserves all OAuth2 configuration fields for partial overrides', () => {
+    const credential: Credential = {
+      id: 'c2',
+      name: 'oauth-svc',
+      type: 'oauth2_clientCredentials',
+      tokenUrl: 'https://auth.example.com/token',
+      clientId: 'client-123',
+      clientSecret: 'secret-456',
+      scope: 'read write',
+      clientAuthMethod: 'body',
+      extraTokenParams: { audience: 'api://v1' },
+    };
+    expect(cloneDraft(credential)).toEqual({
+      name: 'oauth-svc (copy)',
+      type: 'oauth2_clientCredentials',
+      tokenUrl: 'https://auth.example.com/token',
+      clientId: 'client-123',
+      clientSecret: 'secret-456',
+      scope: 'read write',
+      clientAuthMethod: 'body',
+      extraTokenParams: { audience: 'api://v1' },
+    });
   });
 });
 

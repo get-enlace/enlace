@@ -1,5 +1,5 @@
 import { CREDENTIAL_TYPE_LABELS, isDraftComplete, maskedPreview, openLoginUrl, toDraft } from '../../utils/credentialDraft.js';
-import { ExternalLinkIcon, PencilIcon, TrashIcon } from '../chromeIcons.js';
+import { CopyIcon, ExternalLinkIcon, PencilIcon, TrashIcon } from '../chromeIcons.js';
 import type { Credential } from '../../types.js';
 
 export interface CredentialCardProps {
@@ -7,6 +7,7 @@ export interface CredentialCardProps {
   /** How many WorkflowNodes currently reference this credential — used on delete confirm. */
   usageCount: number;
   onEdit: (credential: Credential) => void;
+  onClone?: (credential: Credential) => void;
   onDelete: (credentialId: string) => void;
 }
 
@@ -14,7 +15,7 @@ export interface CredentialCardProps {
  * One saved credential row — name first, type + status on a quiet meta line.
  * Usage is only surfaced when deleting (confirm), not as always-on copy.
  */
-export function CredentialCard({ credential, usageCount, onEdit, onDelete }: CredentialCardProps) {
+export function CredentialCard({ credential, usageCount, onEdit, onClone, onDelete }: CredentialCardProps) {
   const complete = isDraftComplete(toDraft(credential));
   // '' for bearer/oauth2_clientCredentials — see maskedPreview's own
   // comment for why those two have no non-secret detail worth a second
@@ -64,6 +65,17 @@ export function CredentialCard({ credential, usageCount, onEdit, onDelete }: Cre
               title="Opens the login page in a new tab — log in there if your session has expired."
             >
               <ExternalLinkIcon />
+            </button>
+          )}
+          {onClone && (
+            <button
+              type="button"
+              className="credential-card__icon-btn"
+              onClick={() => onClone(credential)}
+              aria-label={`Clone ${credential.name}`}
+              title="Clone"
+            >
+              <CopyIcon />
             </button>
           )}
           <button

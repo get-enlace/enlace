@@ -3,7 +3,7 @@ import { useWorkflowStore } from '../../store/workflowStore.js';
 import { CredentialCard } from './CredentialCard.js';
 import { CredentialForm } from './CredentialForm.js';
 import { DeclaredCredentialsList } from './DeclaredCredentialsList.js';
-import { emptyDraft, isDraftComplete, toDraft } from '../../utils/credentialDraft.js';
+import { cloneDraft, emptyDraft, isDraftComplete, toDraft } from '../../utils/credentialDraft.js';
 import type { DeclaredCredential } from '@get-enlace/core';
 import type { Credential, NewCredential } from '../../types.js';
 
@@ -64,6 +64,12 @@ export function CredentialsPanel({ showTrigger = true, open, onOpenChange }: Cre
   const startEditing = (credential: Credential) => {
     setDraft(toDraft(credential));
     setEditingId(credential.id);
+    setIsAdding(true);
+  };
+
+  const startCloning = (credential: Credential) => {
+    setDraft(cloneDraft(credential, credentials.map((c) => c.name)));
+    setEditingId(null);
     setIsAdding(true);
   };
 
@@ -178,6 +184,7 @@ export function CredentialsPanel({ showTrigger = true, open, onOpenChange }: Cre
                       credential={c}
                       usageCount={nodes.filter((n) => n.credentialId === c.id).length}
                       onEdit={startEditing}
+                      onClone={startCloning}
                       onDelete={removeCredential}
                     />
                   ))}

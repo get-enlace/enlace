@@ -100,6 +100,24 @@ export function toDraft(credential: Credential): NewCredential {
 }
 
 /**
+ * Strips `id` and spec-declared origin off a saved credential, seeds the draft with a unique
+ * copy name, and keeps all configured values intact for partial overrides.
+ */
+export function cloneDraft(credential: Credential, existingNames: string[] = []): NewCredential {
+  const { id: _id, fromSecurityScheme: _fromSecurityScheme, ...rest } = credential;
+  const nameSet = new Set(existingNames);
+  let name = `${credential.name} (copy)`;
+  if (nameSet.has(name)) {
+    let counter = 2;
+    while (nameSet.has(`${credential.name} (copy ${counter})`)) {
+      counter++;
+    }
+    name = `${credential.name} (copy ${counter})`;
+  }
+  return { ...rest, name };
+}
+
+/**
  * The saved card's second line, under the credential's own `name`. Per
  * type, shows whatever *non-secret* structural detail actually helps tell
  * two credentials apart at a glance — never a fragment of the secret

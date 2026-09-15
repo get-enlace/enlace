@@ -226,4 +226,47 @@ describe('CredentialsPanel', () => {
 
     expect(useWorkflowStore.getState().credentials).toHaveLength(0);
   });
+
+  it('clicking Clone on a card opens the form with a unique copy name and cloned values', async () => {
+    const user = userEvent.setup();
+    useWorkflowStore.setState({
+      credentials: [{ id: 'c1', name: 'staging', type: 'bearer', token: 'secret-token' }],
+    });
+    render(<CredentialsPanel />);
+    await user.click(screen.getByRole('button', { name: '1 credential' }));
+
+    await user.click(screen.getByRole('button', { name: 'Clone staging' }));
+
+    expect(screen.getByRole('heading', { name: 'New credential' })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('name')).toHaveValue('staging (copy)');
+    expect(screen.getByPlaceholderText('bearer token')).toHaveValue('secret-token');
+
+    const tokenInput = screen.getByPlaceholderText('bearer token');
+    await user.clear(tokenInput);
+    await user.type(tokenInput, 'different-token');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    const credentials = useWorkflowStore.getState().credentials;
+    expect(credentials).toHaveLength(2);
+    expect(credentials[0]).toMatchObject({ id: 'c1', name: 'staging', token: 'secret-token' });
+    expect(credentials[1]).toMatchObject({ name: 'staging (copy)', token: 'different-token' });
+    expect(credentials[1].id).not.toBe('c1');
+  });
+
+  it('generates incremented copy names when cloning multiple times', async () => {
+    const user = userEvent.setup();
+    useWorkflowStore.setState({
+      credentials: [
+        { id: 'c1', name: 'staging', type: 'bearer', token: 'token-1' },
+        { id: 'c2', name: 'staging (copy)', type: 'bearer', token: 'token-2' },
+      ],
+    });
+    render(<CredentialsPanel />);
+    await user.click(screen.getByRole('button', { name: '2 credentials' }));
+
+    await user.click(screen.getByRole('button', { name: 'Clone staging' }));
+
+    expect(screen.getByPlaceholderText('name')).toHaveValue('staging (copy 2)');
+  });
 });

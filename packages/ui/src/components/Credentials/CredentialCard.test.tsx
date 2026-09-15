@@ -86,6 +86,23 @@ describe('CredentialCard', () => {
     expect(onEdit).toHaveBeenCalledWith(bearerCredential);
   });
 
+  it('calls onClone with the credential when Clone is clicked', async () => {
+    const user = userEvent.setup();
+    const onClone = vi.fn();
+    render(
+      <CredentialCard
+        credential={bearerCredential}
+        usageCount={0}
+        onEdit={() => {}}
+        onClone={onClone}
+        onDelete={() => {}}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Clone staging' }));
+    expect(onClone).toHaveBeenCalledWith(bearerCredential);
+  });
+
   it('shows "Needs a value" instead of an empty mask when the secret is missing', () => {
     const incomplete: Credential = { id: 'c1', name: 'staging', type: 'bearer', token: '' };
     render(<CredentialCard credential={incomplete} usageCount={0} onEdit={() => {}} onDelete={() => {}} />);
