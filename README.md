@@ -11,7 +11,6 @@
     <a href="https://get-enlace.github.io/"><img src="https://img.shields.io/badge/docs-get--enlace.github.io-informational" alt="Documentation" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" /></a>
   </p>
-
   <p>
     <a href="https://enlace-fastapi.onrender.com/enlace/"><strong>🚀 Try the Live Demo</strong></a> •
     <a href="https://get-enlace.github.io/"><strong>📖 Documentation</strong></a> •
